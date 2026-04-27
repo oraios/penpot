@@ -1186,8 +1186,8 @@
              (let [objects (u/locate-objects file-id page-id)
                    shape (u/locate-shape file-id page-id id)]
                (when (ctn/in-any-component? objects shape)
-                 (let [[root component] (u/locate-component objects shape)]
-                   (lib-component-proxy plugin-id (:component-file root) (:id component))))))
+                 (let [head (ctn/get-head-shape objects shape)]
+                   (lib-component-proxy plugin-id (:component-file head) (:component-id head)))))
 
            :detach
            (fn []
