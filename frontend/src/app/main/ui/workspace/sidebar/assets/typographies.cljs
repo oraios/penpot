@@ -26,7 +26,7 @@
    [app.main.ui.workspace.sidebar.assets.groups :as grp]
    [app.main.ui.workspace.sidebar.options.menus.typography :refer [typography-entry]]
    [app.util.dom :as dom]
-   [app.util.i18n :as i18n :refer [tr]]
+   [app.util.i18n :refer [tr]]
    [cuerdas.core :as str]
    [okulary.core :as l]
    [potok.v2.core :as ptk]
@@ -134,7 +134,7 @@
   {::mf/wrap-props false}
   [{:keys [file-id prefix groups open-groups force-open? file local? selected local-data
            editing-id renaming-id on-asset-click handle-change on-rename-group
-           on-ungroup on-context-menu selected-full is-read-only]}]
+           on-ungroup on-delete-group on-context-menu selected-full is-read-only]}]
   (let [group-open?    (if (false? (get open-groups prefix)) ;; if the user has closed it specifically, respect that
                          false
                          (get open-groups prefix true))
@@ -185,6 +185,7 @@
                                  :is-group-open group-open?
                                  :on-rename on-rename-group
                                  :on-ungroup on-ungroup
+                                 :on-delete-group on-delete-group
                                  :on-add (when (and local? (not is-read-only))
                                            add-typography-to-group)}]
 
@@ -238,6 +239,7 @@
                                     :handle-change handle-change
                                     :on-rename-group on-rename-group
                                     :on-ungroup on-ungroup
+                                    :on-delete-group on-delete-group
                                     :on-context-menu on-context-menu
                                     :selected-full selected-full
                                     :is-read-only is-read-only}]))])]))
@@ -352,6 +354,13 @@
                                 (cmm/ungroup % path)))))
              (st/emit! (dwu/commit-undo-transaction undo-id)))))
 
+        on-delete-group
+        (mf/with-memo [typographies on-clear-selection]
+          (cmm/make-delete-asset-group-fn
+           {:assets typographies
+            :on-clear-selection on-clear-selection
+            :delete-events #(map (fn [t] (dwl/delete-typography (:id t))) %)}))
+
         on-context-menu
         (mf/use-fn
          (mf/deps selected on-clear-selection read-only?)
@@ -441,6 +450,7 @@
                                :handle-change handle-change
                                :on-rename-group on-rename-group
                                :on-ungroup on-ungroup
+                               :on-delete-group on-delete-group
                                :on-context-menu on-context-menu
                                :selected-full selected-full
                                :is-read-only read-only?}]
