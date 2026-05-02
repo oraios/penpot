@@ -204,6 +204,7 @@
 (def text-editor-blur text-editor/text-editor-blur)
 (def text-editor-set-cursor-from-offset text-editor/text-editor-set-cursor-from-offset)
 (def text-editor-set-cursor-from-point text-editor/text-editor-set-cursor-from-point)
+(def text-editor-toggle-overtype-mode text-editor/text-editor-toggle-overtype-mode)
 (def text-editor-pointer-down text-editor/text-editor-pointer-down)
 (def text-editor-pointer-move text-editor/text-editor-pointer-move)
 (def text-editor-pointer-up text-editor/text-editor-pointer-up)
@@ -1077,16 +1078,18 @@
 
 (defn intersect-position-in-shape
   [id position]
-  (let [buffer (uuid/get-u32 id)
-        result
-        (h/call wasm/internal-module "_intersect_position_in_shape"
-                (aget buffer 0)
-                (aget buffer 1)
-                (aget buffer 2)
-                (aget buffer 3)
-                (:x position)
-                (:y position))]
-    (= result 1)))
+  (if (and wasm/context-initialized? (not @wasm/context-lost?))
+    (let [buffer (uuid/get-u32 id)
+          result
+          (h/call wasm/internal-module "_intersect_position_in_shape"
+                  (aget buffer 0)
+                  (aget buffer 1)
+                  (aget buffer 2)
+                  (aget buffer 3)
+                  (:x position)
+                  (:y position))]
+      (= result 1))
+    false))
 
 (def render-finish
   (letfn [(do-render []

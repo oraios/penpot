@@ -54,8 +54,7 @@
        (str/blank? (:font-family-tmp font))))
 
 (mf/defc header*
-  {::mf/props :obj
-   ::mf/memo true
+  {::mf/memo true
    ::mf/private true}
   [{:keys [section team]}]
   (use-page-title team section)
@@ -64,17 +63,14 @@
     [:h1 (tr "labels.fonts")]]])
 
 (mf/defc font-variant-display-name*
-  {::mf/props :obj
-   ::mf/private true}
+  {::mf/private true}
   [{:keys [variant]}]
-  [:*
-   [:span (cm/font-weight->name (:font-weight variant))]
-   (when (not= "normal" (:font-style variant))
-     [:span " " (str/capital (:font-style variant))])])
+  [:span (cm/font-display-variant (:variant-name variant)
+                                  (:font-weight variant)
+                                  (:font-style variant))])
 
 (mf/defc uploaded-fonts*
-  {::mf/props :obj
-   ::mf/private true}
+  {::mf/private true}
   [{:keys [team installed-fonts]}]
   (let [fonts*     (mf/use-state {})
         fonts      (deref fonts*)
@@ -438,7 +434,6 @@
             :on-edit on-edit}]]))]))
 
 (mf/defc installed-fonts*
-  {::mf/props :obj}
   [{:keys [fonts can-edit]}]
   (let [sterm (mf/use-state "")
 
@@ -491,7 +486,6 @@
   (l/derived :fonts st/state))
 
 (mf/defc fonts-page*
-  {::mf/props :obj}
   [{:keys [team]}]
   (let [fonts       (mf/deref ref:fonts)
         permissions (:permissions team)
@@ -505,7 +499,6 @@
        {:team team :fonts fonts :can-edit can-edit}]]]))
 
 (mf/defc font-providers-page*
-  {::mf/props :obj}
   [{:keys [team]}]
   [:*
    [:> header* {:team team :section :providers}]
