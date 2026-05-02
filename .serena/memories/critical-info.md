@@ -1,3 +1,5 @@
+You are working on the GitHub project penpot/penpot.
+
 # Working with Penpot Designs
 
 Before working with Penpot designs, call the `high_level_overview` tool of the Penpot MCP server.
