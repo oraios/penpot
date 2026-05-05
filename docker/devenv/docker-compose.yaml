@@ -46,6 +46,10 @@ services:
       - 9090:9090
       - 9091:9091
 
+      # Serena MCP server (agentic mode only)
+      - ${SERENA_EXTERNAL_PORT:-10234}:10234
+      - ${SERENA_DASHBOARD_EXTERNAL_PORT:-24282}:24282
+
       # MCP
       - 4400:4400
       - 4401:4401
@@ -59,7 +63,6 @@ services:
 
     environment:
       - EXTERNAL_UID=${CURRENT_USER_ID}
-      - PENPOT_FLAGS=enable-access-tokens enable-mcp
       # SMTP setup
       - PENPOT_SMTP_ENABLED=true
       - PENPOT_SMTP_DEFAULT_FROM=no-reply@example.com

@@ -10,6 +10,13 @@ cp /root/.bashrc /home/penpot/.bashrc
 cp /root/.vimrc /home/penpot/.vimrc
 cp /root/.tmux.conf /home/penpot/.tmux.conf
 
+# Seed SERENA_HOME with default config on first run
+mkdir -p ${SERENA_HOME}
+if [ ! -f "${SERENA_HOME}/serena_config.yml" ]; then
+    cp /home/serena_config.yml "${SERENA_HOME}/serena_config.yml"
+fi
+chown -R penpot:users ${SERENA_HOME}
+
 chown penpot:users /home/penpot
 rsync -ar --chown=penpot:users /opt/cargo/ /home/penpot/.cargo/
 
