@@ -295,3 +295,12 @@ To test a Feature Flag, you can enable or disable them by team through the `dbg`
 2. Copy the `team-id` from the URL (e.g., `?team-id=1234bd95-69dd-805c-8005-c015415436ae`). If no team is selected, the default profile team will be used.
 3. Go to [http://localhost:3449/dbg](http://localhost:3449/dbg).
 4. Open the Feature Flag panel, enter the `team-id` and the `feature` name in either the enable or disable section, and click `Submit`.
+
+
+## Troubleshooting
+
+### Port Collisions
+
+Penpot uses fixed ports for forwarding, which on Windows (or WSL) may lead to port collisions with Hyper-V's HNS service.
+To avoid them, you can execute `docker/devenv/reserver-ports.bat` in a privileged shell and reboot the computer,
+this will reserve the ports for the devenv. Alternatively, you can adjust the ports in docker-compose.yml.
