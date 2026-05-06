@@ -116,6 +116,8 @@ function run-devenv-tmux {
                 extra_env_args+=(-e "$2"); shift 2;;
             -e*)
                 extra_env_args+=(-e "${1#-e}"); shift;;
+            --create-demo-user)
+                extra_env_args+=(-e "CREATE_DEMO_USER=true"); shift;;
             *)
                 shift;;
         esac
@@ -126,7 +128,7 @@ function run-devenv-tmux {
         echo "Waiting for containers fully start (5s)..."
         sleep 5;
     fi
-
+    echo "Attaching to penpot-devenv-main with tmux session. Forwarded env vars: ${extra_env_args[@]}"
     docker exec -ti \
         "${extra_env_args[@]}" \
         penpot-devenv-main sudo -EH -u penpot PENPOT_PLUGIN_DEV=$PENPOT_PLUGIN_DEV /home/start-tmux.sh
@@ -137,13 +139,16 @@ function run-devenv-agentic {
     local serena_context="desktop-app"
     local serena_external_port="14281"
     local serena_dashboard_external_port="14282"
+    local forwarded_args=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --serena-context)
                 serena_context="$2"; shift 2;;
             *)
-                shift;;
+                forwarded_args+=("$1")
+                shift
+                ;;
         esac
     done
 
@@ -158,7 +163,7 @@ function run-devenv-agentic {
     run-devenv-tmux \
         -e SERENA_ENABLED=true \
         -e SERENA_CONTEXT="$serena_context" \
-        -e PENPOT_FLAGS="${PENPOT_FLAGS} enable-mcp"
+        -e PENPOT_FLAGS="${PENPOT_FLAGS} enable-mcp" "${forwarded_args[@]}"
 }
 
 function run-devenv-shell {
@@ -403,6 +408,7 @@ function usage {
     echo "- drop-devenv                      Remove the development oriented docker compose containers, volumes and clean images."
     echo "- run-devenv                       Attaches to the running devenv container and starts development environment"
     echo "                                   Optional -e flags are forwarded to 'docker exec' (e.g. -e MY_VAR=value)."
+    echo "                                   Optional --create-demo-user creates a demo user (demo@penpot.com / demo) on startup."
     echo "- run-devenv-agentic               Like run-devenv but with additional processes for agentic development enabled."
     echo "                                   Options: --serena-context CONTEXT (default: desktop-app)"
     echo "- run-devenv-shell                 Attaches to the running devenv container and starts a bash shell."

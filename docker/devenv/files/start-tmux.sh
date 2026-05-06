@@ -54,9 +54,14 @@ if echo "$PENPOT_FLAGS" | grep -q "enable-mcp"; then
 fi
 
 if [ "${SERENA_ENABLED:-false}" = "true" ]; then
-    tmux new-window -t penpot:5 -n 'serena'
-    tmux select-window -t penpot:5
-    tmux send-keys -t penpot "serena start-mcp-server --transport streamable-http --port 14281 --project penpot --context ${SERENA_CONTEXT} --host 0.0.0.0" enter
+    tmux new-window -t penpot:5 -n serena
+    tmux send-keys -t penpot:5 "serena start-mcp-server --transport streamable-http --port 14281 --project penpot --context ${SERENA_CONTEXT} --host 0.0.0.0" enter
 fi
 
+tmux new-window -t penpot:6 -n setup
+tmux select-window -t penpot:6
+tmux send-keys -t penpot 'cd penpot' enter C-l
+if ${CREATE_DEMO_USER:-false}; then
+  tmux send-keys -t penpot './backend/scripts/create-demo-user' enter
+fi
 tmux -2 attach-session -t penpot

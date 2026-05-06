@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+PREPL_URI="tcp://localhost:6063"
+TIMEOUT_SECONDS=120
+START_TIME=$(date +%s)
+
+pushd "$SCRIPT_DIR" >/dev/null
+
+echo "[create-demo-user] Waiting up to ${TIMEOUT_SECONDS}s for backend PREPL to be ready (${PREPL_URI})..."
+
+# We use `search-profile` as a readiness probe instead of just checking
+# whether the TCP port is open. This verifies that:
+#   - the PREPL socket accepts connections
+#   - the backend is fully initialized
+#   - commands can actually be processed
+until uv run manage.py search-profile \
+    -e "demo@penpot.com" \
+    --connect "${PREPL_URI}" >/dev/null 2>&1
+do
+    NOW=$(date +%s)
+    ELAPSED=$((NOW - START_TIME))
+
+    if [ "$ELAPSED" -ge "$TIMEOUT_SECONDS" ]; then
+        echo "[create-demo-user] ERROR: Backend PREPL did not become ready within ${TIMEOUT_SECONDS}s."
+        exit 1
+    fi
+
+    sleep 2
+done
+
+echo "[create-demo-user] Backend ready. Creating demo user (demo@penpot.com)..."
+
+uv run manage.py create-profile \
+    -n "demo" \
+    -e "demo@penpot.com" \
+    -p "demo" \
+    --skip-tutorial \
+    --skip-walkthrough \
+    --connect "${PREPL_URI}" \
+    && echo "[create-demo-user] Demo user created successfully." \
+    || echo "[create-demo-user] WARNING: Demo user creation failed (may already exist)."
+
+popd >/dev/null
