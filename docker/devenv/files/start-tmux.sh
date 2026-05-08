@@ -56,6 +56,9 @@ fi
 if [ "${SERENA_ENABLED:-false}" = "true" ]; then
     tmux new-window -t penpot:5 -n 'serena'
     tmux select-window -t penpot:5
+    if [ -n "${SERENA_UPDATE_VERSION}" ]; then
+        tmux send-keys -t penpot "uv tool upgrade serena-agent@${SERENA_UPDATE_VERSION} --prerelease=allow" enter
+    fi
     tmux send-keys -t penpot "serena start-mcp-server --transport streamable-http --port 14281 --project penpot --context ${SERENA_CONTEXT} --host 0.0.0.0" enter
 fi
 
