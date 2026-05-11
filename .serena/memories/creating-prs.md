@@ -1,30 +1,32 @@
 # Creating Pull Requests
 
-Important: Before creating a PR, ensure that you are on a branch that is specific to the 
-issue or feature you are working on. If necessary, create a new branch.
+Create a PR only when explicitly asked. First ensure the branch is specific to the issue or feature. If necessary, create a branch named like `<type>/<short-description>` (`fix/...`, `feat/...`, `refactor/...`, `docs/...`, `chore/...`, `perf/...`).
 
 ## Title Format
 
-PR titles follow the same convention as commit titles:
+PR titles follow commit title conventions:
 
 ```
-:emoji: Subject line (imperative, capitalized, no period, ≤70 chars)
+:emoji: Subject line (imperative, capitalized, no period, <=70 chars)
 ```
 
-See the `creating-commits` memory for the list of emoji codes.
+See `creating-commits` for emoji codes. Squash merge uses the PR title as the final commit subject, so title format matters.
 
-## Description Format
+## Description
 
-The PR description must start with the following notice:
+Include concise sections covering:
+- what changed and why;
+- related GitHub issues or Taiga stories (`Fixes #NNNN`, `Relates to #NNNN`, `Taiga #NNNN`);
+- screenshots or recordings for UI-visible changes;
+- testing performed and residual risk;
+- breaking changes or migration notes, if any.
+
+For the Penpot MCP self-improvement workflow, PR descriptions are expected to start with:
 
 > **Note:** This PR was created with AI assistance as part of the Penpot MCP self-improvement initiative.
 
- **Related Issues** section with a bullet list of linked issues:
+## Before Opening
 
-```
-In addition to sections summarising and explaining the changes in the PR, it should contain a section 'Relevant Issues' with a bullet list:
-
-- Fixes #NNNN
-- Resolves #NNNN
-- Relates to #NNNN
-```
+- Follow `creating-commits` for changelog expectations.
+- Run the focused tests/lints appropriate to touched modules.
+- Do not force-push during review unless the maintainer workflow explicitly asks for it.

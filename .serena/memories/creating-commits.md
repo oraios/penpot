@@ -1,32 +1,35 @@
 # Creating Commits
 
+Commit only when explicitly asked. Before committing, check `git status` and do not include unrelated user changes.
+
 ## Message Format
 
 ```
-:emoji: Subject line (imperative, capitalized, no period, ≤70 chars)
+:emoji: Subject line (imperative, capitalized, no period, <=70 chars)
 
-Body (clear, concise description)
+Body explaining what changed and why.
 
+Signed-off-by: Real Name <email>
 Co-authored-by: <You (the LLM)>
 ```
+
+The repository requires DCO signoff for code patches. Use `git commit -s` when possible so the `Signed-off-by` line matches the commit author. Documentation-only changes are excluded from the DCO requirement, but using signoff is still usually fine.
 
 ## Commit Type Emojis
 
 `:bug:` bug fix · `:sparkles:` enhancement · `:tada:` new feature · `:recycle:` refactor · `:lipstick:` cosmetic · `:ambulance:` critical fix · `:books:` docs · `:construction:` WIP · `:boom:` breaking · `:wrench:` config · `:zap:` perf · `:whale:` docker · `:paperclip:` other · `:arrow_up:` dep upgrade · `:arrow_down:` dep downgrade · `:fire:` removal · `:globe_with_meridians:` translations · `:rocket:` epic/highlight
 
-## Changelog (CHANGES.md)
+## Changelogs
 
-Update `CHANGES.md` for user-facing or notable changes. Add entry under the current unreleased version in the matching section (`### :boom:`, `### :sparkles:`, `### :bug:`, etc.).
+For user-facing or notable changes, update the relevant changelog under the unreleased section:
+- Main app/modules (`backend`, `frontend`, `common`, `render-wasm`, `exporter`, `mcp`): root `CHANGES.md`.
+- Plugin subproject changes: `plugins/CHANGELOG.md`.
 
-Entry format:
-```
-- Description of change [Taiga #NNNN](https://tree.taiga.io/project/penpot/us/NNNN)
-```
-or for GitHub issues/PRs:
+Entry format uses the matching category (`:sparkles:`, `:bug:`, etc.) and references the GitHub issue or Taiga story when available:
+
 ```
 - Description of change [Github #NNNN](https://github.com/penpot/penpot/issues/NNNN)
+- Description of change [Taiga #NNNN](https://tree.taiga.io/project/penpot/us/NNNN)
 ```
 
-Changes that affect the JavaScript plugin API must additionally be documented in `plugins/CHANGELOG.md`:
-  * Add an entry at the top of the file (unreleased section)
-  * Prefix entries that change the types/signatures in the API with `**plugin-types:**` and changes affecting the runtime with `**plugin-runtime:**`.
+Plugin API changes need extra care: type/signature changes should be prefixed `**plugin-types:**`; runtime behavior changes should be prefixed `**plugin-runtime:**` in `plugins/CHANGELOG.md`.

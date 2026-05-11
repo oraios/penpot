@@ -1,27 +1,25 @@
-You are working on the GitHub project penpot/penpot.
+You are working on the GitHub project `penpot/penpot`.
 
-# Working with Penpot Designs via the JavaScript API
+# Required first steps
 
-Before working with Penpot designs, call the `high_level_overview` tool of the Penpot MCP server.
-It explains the API, which you can use to automate tasks via the `execute_code` tool.
+1. Use Serena memories as the primary project guidance. Start with this `critical-info` memory, then read `project/agent-workflow-and-module-map` for repo/module routing.
+2. Identify affected modules and read only the focused memories relevant to those modules. Prefer focused memories over broad architecture memories once you know the area.
+3. If Serena memory tools are unavailable, read the Markdown files directly from `.serena/memories/` in the project.
 
-# Dev Workflow
+# Memory maintenance while working
 
-Memories:
-  - before creating a commit, read `creating-commits`.
-  - before creating a PR, read `creating-prs`.
+When code exploration reveals a stable, non-obvious project convention that would help future agents avoid complex rediscovery, update or add the relevant memory before finishing. Keep memories terse, generalizable, and tied to durable behavior rather than one task. When adding, renaming, splitting, or moving a memory, update cross-references in `critical-info`, `project/agent-workflow-and-module-map`, or the affected module architecture memory so incremental discovery still works.
 
-# Frontend
+# Cross-module caution
 
-Read the file `frontend/AGENTS.md` for an overview.
-Memories:
-  - connection between the JavaScript API and the ClojureScript code: `frontend/js-api-to-cljs-binding`.
-  - executing ClojureScript code in the frontend: `frontend/cljs-repl`.
-  - programmatically navigating to a file in the workspace: `frontend/navigation`.
-  - handling Clojure compiler errors, runtime patching and debug helpers: `frontend/handling-errors-and-debugging`.
+`common/` is shared CLJC used by frontend, backend, exporter, and file/library tooling. Treat geometry, component, file-model, tokens, schema, and change-pipeline behavior as shared contract, not local implementation detail.
 
-## Detecting Crashes
+# Working with Penpot designs through MCP
 
-The Penpot frontend can crash silently from the JS API's perspective: `execute_code` calls return successfully, but 1-2s later the workspace becomes unusable (Internal Error page). 
-The `execute_code` tool then stops working, but `cljs_repl` still works. Use it to detect a crash via `(some? (:exception @app.main.store/state))`.
-For details on handling crashes, read memory `frontend/handling-crashes`.
+Before automating or inspecting Penpot designs through the Plugin API, call the Penpot MCP `high_level_overview` tool. It explains the `execute_code` environment (`penpot`, `penpotUtils`, `storage`) and the available API surface.
+
+# Frontend compile vs runtime crash diagnostics
+
+After CLJ/CLJC/CLJS source edits, stale hot reload, or a suspected bad build, read `frontend/compile-diagnostics` and use `cljs_compiler_output`. If the compiler error suggests unmatched delimiters, use `clj_check_parentheses` on the suspect source file.
+
+If the compiler is healthy but the workspace shows Internal Error, or `execute_code` succeeds and the app crashes 1-2s later, read `frontend/handling-crashes`. A quick runtime crash check is cljs-repl: `(some? (:exception @app.main.store/state))`.
