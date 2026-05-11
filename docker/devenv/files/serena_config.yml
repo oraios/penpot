@@ -109,7 +109,7 @@ fixed_tools: []
 # The full set of modes to be activated is base_modes + default_modes.
 # If this is undefined, no base modes are included.
 # The project configuration (project.yml) may override this setting.
-base_modes:
+base_modes: [no-onboarding]
 
 # list of mode names that are to be activated by default.
 # The full set of modes to be activated is base_modes + default_modes.
