@@ -16,6 +16,7 @@ For stable non-obvious RPC/DB/worker behavior, read `backend/rpc-db-worker-subtl
 - `app.worker`: task execution/cron plumbing.
 - `app.main`: Integrant system map and component wiring.
 - `app.config`: `PENPOT_*` env config and feature flags.
+- `app.srepl.*`: development REPL helpers for manual backend operations.
 
 ## RPC conventions
 
@@ -30,17 +31,28 @@ RPC commands are defined with `app.util.services/defmethod` and schemas. Use `ge
 
 Development DB: `postgresql://penpot:penpot@postgres/penpot`.
 Test DB: `postgresql://penpot:penpot@postgres/penpot_test`.
-Migrations live in `backend/src/app/migrations/`; applied migrations are tracked in the `migrations` table.
+Database migrations live in `backend/src/app/migrations/`; pure SQL migrations are under `backend/src/app/migrations/sql/`. SQL filenames conventionally start with a sequence and verb/table description, e.g. `0026-mod-profile-table-add-is-active-field`. Applied migrations are tracked in the `migrations` table.
+
+To inspect the whole DB schema in devenv, use `pg_dump -h postgres -s > schema.sql` from inside the environment.
 
 ## Background tasks
 
 A task handler is an Integrant component with `ig/assert-key`, `ig/expand-key`, and `ig/init-key`, returning the function run by the worker. New tasks also need wiring in `app.main`: handler config, worker registry entry, and cron entry if scheduled.
+
+## REPL and fixtures
+
+In devenv, backend nREPL is exposed on port 6064. `backend/scripts/nrepl` starts a REPLy client.
+
+For an in-process backend REPL, stop the running backend first so port 9090 is free, then run `backend/scripts/repl`. Useful top-level helpers include `(start)`, `(stop)`, `(restart)`, `(run-tests)`, and `(repl/refresh-all)`. Many `app.srepl.main` helpers accept the global `system` var, e.g. manual email or maintenance operations.
+
+Fixtures can populate local data for manual testing/perf work. From the backend REPL, run `(app.cli.fixtures/run {:preset :small})`; fixture users conventionally look like `profileN@example.com` with password `123123`. Standalone fixture aliases may exist, but check current `backend/deps.edn` before relying on old command names.
 
 ## Commands
 
 From `backend/`:
 - Focused test: `clojure -M:dev:test --focus backend-tests.some-ns-test`.
 - Full backend test suite: `clojure -M:dev:test` or `pnpm run test`.
+- Watch/focused testing is also available through `(run-tests ...)` in the backend REPL.
 - Lint: `pnpm run lint`.
 - Format check: `pnpm run check-fmt`.
 - Format fix: `pnpm run fmt`.

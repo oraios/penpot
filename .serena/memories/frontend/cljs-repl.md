@@ -1,6 +1,6 @@
-# ClojureScript REPL Access via shadow-cljs
+# ClojureScript REPL and Frontend Debugging
 
-Execute code in the live frontend via the Penpot MCP `cljs_repl` tool.
+Execute code in the live frontend via the Penpot MCP `cljs_repl` tool. For browser-console debugging, the frontend also exports a `debug` JS namespace in development builds.
 
 ## Accessing app state
 
@@ -56,6 +56,25 @@ Some frontend vars are deliberately mutable escape hatches for runtime instrumen
 ```
 
 Restore mutable hooks after debugging, or reload the frontend. Use JVM `alter-var-root` only for JVM Clojure; it is not the normal way to patch live CLJS browser vars.
+
+## Browser-console debug namespace
+
+In development, the JS console exposes `debug` helpers from `frontend/src/debug.cljs`:
+
+```javascript
+debug.set_logging("namespace", "debug");
+debug.dump_state();
+debug.dump_buffer();
+debug.get_state(":workspace-local :selected");
+debug.dump_objects();
+debug.dump_object("Rect-1");
+debug.dump_selected();
+debug.dump_tree(true, true);
+```
+
+Visual workspace debug overlays can be toggled with `debug.toggle_debug("bounding-boxes")`, `"group"`, `"events"`, or `"rotation-handler"`; `debug.debug_all()` and `debug.debug_none()` toggle all visual aids.
+
+For temporary source traces, prefer existing logging (`app.common.logging` / `app.util.logging`) or short-lived `prn`, `app.common.pprint/pprint`, `js/console.log`, or `js-debugger` calls. Remove temporary source instrumentation before committing.
 
 ## Runtime targeting
 

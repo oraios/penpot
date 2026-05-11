@@ -2,7 +2,7 @@
 
 Use with `frontend/architecture-and-workflow` for frontend validation. Frontend code is ClojureScript + React/Rumext + RxJS/Potok state, with SCSS modules and shared CLJC dependencies from `common/`.
 
-## Unit Tests
+## Unit tests
 
 Frontend unit tests live under `frontend/test/frontend_tests/` and use `cljs.test`. They should be deterministic, avoid DOM/UI integration where possible, and mock side effects such as RPC, storage, timers, or network access.
 
@@ -12,9 +12,18 @@ From `frontend/`:
 - Build test target only: `pnpm run build:test`.
 - Watch tests: `pnpm run watch:test`.
 
+## Playwright integration tests
+
 Do not add, modify, or run Playwright integration tests under `frontend/playwright` unless explicitly asked. When explicitly asked, use `pnpm run test:e2e` or `pnpm run test:e2e --grep "pattern"` from `frontend/`; ensure dependencies are installed through `./scripts/setup` if the environment is not prepared.
 
-## Lint and Format
+Integration tests fake backend behavior by intercepting network/websocket traffic, so every RPC or websocket the page needs must be mocked. Use existing Page Object Models:
+- `BasePage.mockRPC` intercepts RPC calls and already prefixes `/api/rpc/command/`; pass command names such as `get-profile`, not full URLs.
+- Workspace or other websocket-using pages should extend/use `BaseWebSocketPage`, initialize websocket mocks before each test, and mock `/ws/notifications` with the provided helpers.
+- Prefer common locators/actions in POMs; ad-hoc locators can stay in a single test.
+
+Locator priority should follow user-facing semantics: `getByRole`, `getByLabel`, `getByPlaceholder`, `getByText`, then semantic alternatives such as alt/title, with `getByTestId` as the last resort. Name tests from the user's perspective and prefer positive, single-purpose assertions.
+
+## Lint and format
 
 From `frontend/`:
 - CLJ/CLJS lint: `pnpm run lint:clj`.
@@ -22,13 +31,16 @@ From `frontend/`:
 - SCSS lint: `pnpm run lint:scss`.
 - Format checks: `pnpm run check-fmt:clj`, `pnpm run check-fmt:js`, `pnpm run check-fmt:scss`.
 - Format fix: `pnpm run fmt`, or targeted `fmt:clj` / `fmt:js` / `fmt:scss`.
+- Translation formatting after i18n edits: `pnpm run translations`.
 
-## Live Browser Verification
+## Live browser verification
 
 Because CLJC compiles to both JVM and CLJS, JVM/common tests can miss frontend-only state caused by browser runtime, WASM modifier math, or real pointer events. Use `frontend/cljs-repl` to inspect live app state and `frontend/playwright-gestures` when real input is needed.
 
 After CLJ/CLJC/CLJS edits, use `frontend/compile-diagnostics` if the app does not hot-reload or behavior appears stale. If the live workspace behaves oddly after automation and the compiler is healthy, read `frontend/handling-crashes` and check `(some? (:exception @app.main.store/state))`.
 
-## CLJC Hot Reload
+## CLJC hot reload and translations
 
 When the frontend shadow-cljs watch process is running, edits to CLJC files in `common/` are automatically recompiled and pushed to the browser. No page reload is normally required. If hot reload fails, follow `frontend/compile-diagnostics` before restarting.
+
+Translation `.po` changes are different: they are bundled into `index.html` and require a browser refresh, not hot reload.
