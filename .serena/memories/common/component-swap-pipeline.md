@@ -1,118 +1,44 @@
-# Component Swap & Variant Switch Pipeline
+# Component Swap and Variant Switch Pipeline
 
-The flow that turns a UI variant-switch action (or a `swap-component`
-operation) into actual shape mutations.
+Use with `common/component-data-model` when changing component swaps, variant switching, or keep-touched behavior. For live tracing snippets, read `common/component-debugging-recipes`.
 
 ## Entry points
 
-UI side (frontend/src/app/main/data/workspace/):
-- `variants.cljs` — `variants-switch` and `variant-switch` events are
-  the entry for the property-toggle UI and the plugin's `switchVariant`
-  JS API. Both feed into `dwl/component-swap`.
-- `libraries.cljs` — `component-swap` is the workhorse; `component-multi-swap`
-  is a batch entry that calls `component-swap` with `keep-touched? = false`.
+Frontend entry points under `frontend/src/app/main/data/workspace/`:
+- `variants.cljs`: `variants-switch` and `variant-switch` events feed property-toggle UI and Plugin API `switchVariant` behavior into `dwl/component-swap`.
+- `libraries.cljs`: `component-swap` is the single-swap workhorse; `component-multi-swap` batches swaps and calls `component-swap` with `keep-touched? = false`.
 
-The discriminator that triggers the keep-touched logic is
-`keep-touched? = true` — only `variant-switch` passes that. The
-`component-multi-swap` path bypasses keep-touched entirely.
+`keep-touched? = true` is the discriminator for preserving user overrides during variant switch. Batch/multi-swap paths intentionally bypass that logic.
 
 ## Common-side pipeline
 
 For a single swap with `keep-touched? = true`:
 
-1. `cll/generate-component-swap`
-   (in `common/src/app/common/logic/libraries.cljc`) builds the basic
-   change set: removes the old shape, instantiates the new component
-   in its place via `generate-new-shape-for-swap` →
-   `generate-instantiate-component` → `make-component-instance`.
-   The new shape's geometry is fresh from the target master.
+1. `cll/generate-component-swap` in `common/src/app/common/logic/libraries.cljc` builds the base changes: remove old shape and instantiate the target component in its place through `generate-new-shape-for-swap`, `generate-instantiate-component`, and `make-component-instance`.
+2. `clv/generate-keep-touched` in `common/src/app/common/logic/variants.cljc` walks pre-swap children, augments each with chain-derived touched flags through `add-touched-from-ref-chain`, finds the equivalent target shape through `find-shape-ref-child-of`, then calls `update-attrs-on-switch`.
+3. `update-attrs-on-switch` in `app.common.logic.libraries` decides which touched attrs from the previous shape should be copied onto the freshly instantiated target shape.
 
-2. `clv/generate-keep-touched`
-   (in `common/src/app/common/logic/variants.cljc`) then walks the
-   original (pre-swap) children, augments each with chain-derived
-   touched flags via `add-touched-from-ref-chain`, finds the matching
-   shape in the new tree (via `find-shape-ref-child-of`), and calls
-   `update-attrs-on-switch` for each.
+## update-attrs-on-switch hazards
 
-3. `update-attrs-on-switch`
-   (in `app.common.logic.libraries`) is the per-shape attribute-copying
-   routine. It's where the heavy lifting (and most of the bugs) live.
+The routine compares `current-shape` (fresh target copy), `previous-shape` (pre-swap shape with chain-derived touched), and `origin-ref-shape` (source variant master's equivalent shape). It loops over sync attrs except `swap-keep-attrs` and copies only attrs that pass several guards:
 
-## update-attrs-on-switch in detail
+- skip equal previous/current values;
+- skip equal composite geometry for selected attrs;
+- require the corresponding touched group;
+- for most attrs, require source and target masters to agree;
+- for fixed-size selrect/points/width/height, use dedicated fixed-layout geometry handling;
+- text and path shapes have specialized value conversion paths.
 
-Takes `current-shape` (freshly instantiated from target master),
-`previous-shape` (pre-swap, augmented with chain touched), and
-`origin-ref-shape` (the source variant master's equivalent, found
-via `find-shape-ref-child-of`).
-
-Loops over `updatable-attrs` (= `(keys ctk/sync-attrs) - swap-keep-attrs`)
-and decides per attr whether to copy from `previous-shape` to
-`current-shape`. The decision tree (heavily abridged):
-
-```
-For each attr:
-  skip if (= prev-val curr-val)
-  skip if equal-geometry?(prev, origin-ref, attr)   ;; selrect/points only
-  skip if not (touched (resolve-sync-group attr))
-  skip if (attr ∉ {:points :selrect :content})
-            and (not= origin-ref-attr current-attr)  ;; "different masters"
-  skip if for selrect/points: not :fix sizing AND
-            (or (not= origin-ref-w current-w) (not= origin-ref-h current-h))
-
-  ;; Otherwise copy:
-  for text shapes with auto-grow:        switch-text-change-value
-  for path shapes:                       switch-path-change-value
-  for :fix sizing + selrect/points/w/h:  switch-fixed-layout-geom-change-value
-  else:                                  (get previous-shape attr)   ← danger
-```
-
-The `:else` branch is where "user override carries through" semantically
-should land — but it also catches cases the guards fail to filter,
-producing inconsistent shapes.
+The generic fallback branch copies from `previous-shape`. It represents the intended "carry user override through switch" behavior, but bugs usually appear when guards fail to reject incompatible geometry or master differences before reaching that branch.
 
 ## Known sharp edges
 
-- The "different masters" skip BYPASSES `:selrect` and `:points`
-  because they're composite. The width/height safety check that's
-  supposed to compensate only catches dimension differences, not
-  position differences within the parent.
-- `previous-shape` is `reposition-shape`d before use, translating it
-  by (dest-root - origin-root) — usually zero for variant switch
-  because both instances share `:x`/`:y`.
+- Composite `:selrect` and `:points` bypass the simple different-master skip; width/height checks catch some but not all positional differences.
+- `previous-shape` may be repositioned by destination-root minus origin-root before copying. For normal variant switch this is often zero, but do not assume it for all swap entry points.
+- Touched flags can be inherited through ref chains, so a shape that looks untouched locally may still behave as touched after `add-touched-from-ref-chain`.
 
 ## Test harness
 
-`common/src/app/common/test_helpers/compositions.cljc` has
-`swap-component-in-shape` which directly drives
-`generate-component-swap` + `generate-keep-touched` with the same
-`keep-touched? = true` flag. This is the canonical way to write
-unit tests against the production swap path. The companion file
-`common/test/common_tests/logic/variants_switch_test.cljc` has 40+
-tests covering swap+touched scenarios — read it before adding a new
-test in this area.
+`common/src/app/common/test_helpers/compositions.cljc` has `swap-component-in-shape`, which drives `generate-component-swap` plus `generate-keep-touched` with the production `keep-touched?` flag. Use it for focused common tests of variant-switch behavior.
 
-## Live debugging recipe
-
-To capture exactly what `update-attrs-on-switch` saw during a real
-UI swap, monkey-patch it in the cljs-repl:
-
-```clojure
-(def orig (deref #'app.common.logic.libraries/update-attrs-on-switch))
-(def trace-buf (atom []))
-(set! app.common.logic.libraries/update-attrs-on-switch
-      (fn [& args]
-        (swap! trace-buf conj
-               (let [[_ curr prev _ _ origin _] args]
-                 {:curr (select-keys curr [:name :y :selrect])
-                  :prev (select-keys prev [:y :selrect :touched])
-                  :origin-ref-id (:id origin)
-                  :origin-ref-w (:width origin)}))
-        (apply orig args)))
-;; ... trigger UI action ...
-@trace-buf
-;; restore
-(set! app.common.logic.libraries/update-attrs-on-switch orig)
-```
-
-Faster and more reliable than instrumenting source files (no recompile,
-no need to clean up).
+`common/test/common_tests/logic/variants_switch_test.cljc` is the canonical reference suite for swap+touched scenarios. Read nearby tests before adding another case.

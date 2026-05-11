@@ -1,100 +1,43 @@
-# Component & Variant Data Model
+# Component and Variant Data Model
 
-Penpot's component system has subtle invariants that govern how shapes relate
-to their masters, and several distinct "kinds" of shape that look similar at
-first glance.
+Use before changing component instances, variants, touched override behavior, or ref-chain logic. For swap-specific behavior read `common/component-swap-pipeline`; for live debugging snippets read `common/component-debugging-recipes`.
 
-## Three kinds of shape relative to a component
+## Shape roles relative to components
 
-1. **Master / main instance** — the original shape that defines a component.
-   Has `:main-instance true` and `:component-id`. The variant masters
-   (e.g. m01, m02 inside a variant container) are themselves main instances.
-2. **Copy / non-main instance** — a shape produced by instantiating a
-   component. Carries `:shape-ref` pointing at the master shape it was
-   cloned from. Predicate: `(ctk/in-component-copy? shape)` is just
-   `(some? (:shape-ref shape))`.
-3. **Component root** — the topmost shape of an instance (whether master
-   or copy). Has `:component-root true` and the surface attributes
-   `:component-id` / `:component-file`. Inner descendants of the same
-   instance have neither.
+A shape can occupy multiple roles at once:
 
-A shape can be all three at once: a variant master is a main instance AND
-a component root, AND if its children are themselves instances of other
-components, those children are *copies* (with `:shape-ref`) inside a
-master. This nested-instance setup is the production scenario for many
-real-world components like buttons inside variant frames.
+1. Master/main instance: defines a component and has `:main-instance true` plus `:component-id`.
+2. Copy/non-main instance: produced by instantiating a component and carries `:shape-ref` pointing at the master shape. `(ctk/in-component-copy? shape)` is essentially `(some? (:shape-ref shape))`.
+3. Component root: topmost shape of an instance, marked `:component-root true` and carrying surface attrs such as `:component-id` and `:component-file`.
+
+Variant masters are main instances and component roots. Their descendants may themselves be component copies, so master/copy logic must handle nested instances rather than assuming those roles are exclusive.
 
 ## :shape-ref chains
 
-`:shape-ref` walks "up" the inheritance hierarchy. `find-ref-shape` and
-`get-ref-chain-until-target-ref` (in `app.common.types.file`) follow
-this chain. The chain can cross files (when the upstream master is in
-a remote library).
+`:shape-ref` walks up the inheritance hierarchy and can cross files for remote libraries. `find-ref-shape` and `get-ref-chain-until-target-ref` in `app.common.types.file` follow this chain.
 
-`find-shape-ref-child-of` (in `app.common.logic.variants`) walks the
-chain looking for the first ref-shape whose ancestors include a
-specific parent — used in variant-switch to find the equivalent master
-shape for the *target* variant.
+`find-shape-ref-child-of` in `app.common.logic.variants` walks the chain looking for the first ref-shape whose ancestors include a specific parent. Variant switch uses this to locate the equivalent master child in the target variant.
 
 ## :touched flags
 
-`:touched` is a set of override-group keywords (e.g. `:geometry-group`,
-`:fill-group`, `:text-content-group`). It marks that the COPY has
-diverged from its master on attributes belonging to that group.
+`:touched` is a set of override-group keywords such as `:geometry-group`, `:fill-group`, and `:text-content-group`. It means a copy diverged from its master for attrs in that sync group.
 
-`sync-attrs` (in `app.common.types.component`) maps individual attrs
-to their group: `:x :y :width :height :selrect :points :rotation
-:transform` → `:geometry-group`; `:fills` → `:fill-group`; etc.
+`sync-attrs` in `app.common.types.component` maps attrs to groups. `set-touched-group` is the legitimate setter; the central `set-shape-attr` path calls it only for copies and only when ignore flags allow it.
 
-`set-touched-group` is the only legitimate setter. The central
-`set-shape-attr` (in `app.common.types.container`) calls it from inside
-a guard `(and in-copy? (not ignore?) ...)` — masters are not supposed
-to carry `:touched` flags from this path. But `:touched` CAN end up on
-master shapes via `duplicate-component` (see below).
+Masters are not normally touched through `set-shape-attr`, but touched flags can appear on master shapes through cloning/duplication paths. `add-touched-from-ref-chain` in `app.common.logic.variants` unions touched flags from ancestors into the copy being processed, so upstream/master touched state can affect downstream switch behavior.
 
-`add-touched-from-ref-chain` (in `app.common.logic.variants`) walks a
-copy's ref chain and inherits the union of `:touched` flags found on
-ancestors onto the copy's `:touched`. This is how "the master is touched"
-becomes visible when processing a copy.
+## Cloning paths
 
-## duplicate-component vs make-component-instance
+`make-component-instance` in `app.common.types.container` produces a clean component copy through `update-new-shape`, dissociating attrs such as `:touched`, `:variant-id`, and `:variant-name` on cloned shapes.
 
-These two functions have similar names and clone shapes from a component,
-but they have a **critical** behavioural difference:
+`duplicate-component` in `app.common.logic.libraries` creates a new component master by cloning existing component shapes, setting component metadata, and applying a position delta. It does not have the same clean-copy semantics as `make-component-instance`, so inherited attrs on the source can matter.
 
-- `make-component-instance` (in `app.common.types.container`,
-  via `update-new-shape`) **dissocs** `:touched`, `:variant-id`, and
-  `:variant-name` on every cloned shape. The result is a clean copy.
-- `duplicate-component` (in `app.common.logic.libraries`,
-  via `update-new-shape`) only sets `:component-id`, optionally
-  `:component-file`, `:variant-id` on the root, and applies a position
-  delta. It does **NOT** dissoc `:touched`. So the new master inherits
-  whatever touched flags the source master had.
-
-If you alt-drag a variant whose master child has `:touched` (e.g. because
-the variant master is itself a copy of an upstream component), the new
-auto-created variant master inherits those touched flags. Combined with
-ref-chain walking, this leaks touched state from the original master's
-copy state into the new variant's switch behaviour.
+When a bug depends on touched state, identify which cloning path produced the shape before changing sync logic.
 
 ## Variant containers
 
-A variant container is a frame with `:is-variant-container true`. Its
-children are variant masters, each with `:variant-id` (= container id)
-and `:variant-name` (e.g. "Value 1", "Value 2"). The components themselves
-(in the library's `:components` map) carry `:variant-properties` describing
-property names/values.
+A variant container is a frame with `:is-variant-container true`. Its children are variant masters with `:variant-id` pointing at the container and `:variant-name` naming the variant value. Component records in the library carry `:variant-properties`.
 
-Predicates: `ctk/is-variant?` is just `(some? (:variant-id item))` and
-applies to BOTH the master shape and the component-row in the library.
-`ctk/is-variant-container?` checks the `:is-variant-container` flag on
-a shape.
+Predicates are broad: `ctk/is-variant?` checks `:variant-id` and applies to both variant master shapes and component rows; `ctk/is-variant-container?` checks the container shape flag.
 
-## Auto-conversion to variants in generate-relocate
-
-Beware: dropping a shape into a variant container via the move-to-frame
-path (`generate-relocate` in `app.common.logic.shapes`) can auto-convert
-the dropped shape into a variant via `generate-make-shapes-variant`,
-which can in turn trigger `duplicate-component` for the underlying
-component. This is what makes alt-drag-into-container produce phantom
-"Value N" variant masters.
+Moving/dropping a shape into a variant container through the move-to-frame path can auto-convert it into a variant via `generate-make-shapes-variant`, which may duplicate the underlying component. Treat drag/drop into variant containers as a component/variant operation, not a plain reparent.

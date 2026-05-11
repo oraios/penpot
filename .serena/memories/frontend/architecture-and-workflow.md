@@ -1,6 +1,6 @@
 # Frontend Architecture and Workflow
 
-Use this for frontend work after `project/agent-workflow-and-module-map`. The frontend is a ClojureScript SPA using React/Rumext components, Potok events, RxJS streams, okulary refs, SCSS modules, and shared CLJC code from `common/`.
+Use this for frontend work after `project/agent-workflow-and-module-map`. The frontend is a ClojureScript SPA using React/Rumext components, Potok events, RxJS streams, okulary refs, SCSS modules, shared CLJC code from `common/`, and several JS/TS workspace packages.
 
 ## Stable namespace map
 
@@ -11,12 +11,13 @@ Use this for frontend work after `project/agent-workflow-and-module-map`. The fr
 - `app.plugins.*` and `app.plugins`: CLJS implementation of Plugin JS API proxies.
 - `app.render_wasm.*`: frontend bridge to Rust/WASM renderer.
 - `app.util.*`: DOM, HTTP, i18n, keyboard, and general frontend utilities.
+- `frontend/packages/*` and `frontend/text-editor`: JS/TS workspace packages consumed by the app; read `frontend/ui-packages-text-editor-workflow` before changing them.
 
 ## Component and style conventions
 
-Modern components use `mf/defc` with `*` suffix, destructured props, and `[:> component* props]` calls. Prefer `mf/with-effect` / `mf/with-memo` macros where they improve clarity. Use `mf/deref` for refs from `app.main.refs`.
+Modern CLJS app components use `mf/defc` with `*` suffix, destructured props, and `[:> component* props]` calls. Prefer `mf/with-effect` / `mf/with-memo` macros where they improve clarity. Use `mf/deref` for refs from `app.main.refs`.
 
-Styles are co-located SCSS modules. Use `app.main.style/stl` helpers in CLJS and design-system SCSS tokens/mixins. Avoid introducing legacy SCSS imports or high-specificity nested selectors when touching styles.
+Styles are co-located SCSS modules. Use `app.main.style/stl` helpers in CLJS and design-system SCSS tokens/mixins. Avoid introducing legacy SCSS imports or high-specificity nested selectors when touching styles. For shared UI package/style-system boundaries, read `frontend/ui-conventions-and-style-system`.
 
 ## I18n and performance pitfalls
 
@@ -30,6 +31,8 @@ When UI logic grows inside a component, extract local pure helpers or move reusa
 - Workspace state, commits, persistence, refs: `frontend/workspace-state-persistence-subtleties`.
 - Workspace transforms/modifier previews: `frontend/workspace-transform-subtleties`.
 - Plugin JS API runtime: `frontend/plugin-api-runtime-subtleties`.
+- Shared UI package, text editor, Storybook/package builds: `frontend/ui-packages-text-editor-workflow`.
+- UI conventions and style-system boundaries: `frontend/ui-conventions-and-style-system`.
 - Runtime inspection and navigation: `frontend/cljs-repl`.
 - Source-edit compile/hot-reload diagnostics: `frontend/compile-diagnostics`.
 - Runtime crash recovery: `frontend/handling-crashes`.

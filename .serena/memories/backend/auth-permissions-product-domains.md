@@ -1,0 +1,36 @@
+# Backend Auth, Permissions, and Product Domain Subtleties
+
+Use with `backend/architecture-and-workflow` when changing authentication providers, profile/team/project permissions, invitations, comments, webhooks, audit logging, or management/product RPC commands. For generic RPC wrapper and DB transaction behavior, also read `backend/rpc-db-worker-subtleties`.
+
+## Auth and sessions
+
+- Main auth RPC commands live in `app.rpc.commands.auth`; LDAP and OIDC provider logic live in `app.auth.ldap` and `app.auth.oidc`, with LDAP-specific RPC checks in `app.rpc.commands.ldap`.
+- Public auth endpoints must explicitly set `::rpc/auth false`; RPC auth defaults to enabled. Session cookie creation/deletion is usually attached as an RPC response transform.
+- Logout may return an OIDC provider redirect URI when the session claims include provider/session data and the provider has a logout URI.
+- Invitation tokens are verified through token issuers and only accepted when the token member id matches the authenticated profile; otherwise login proceeds without consuming the invitation.
+- HTTP/session parsing details such as cookie/header precedence, JWT session token versions, and SameSite behavior are in `backend/http-storage-filedata-subtleties`.
+
+## Permission model
+
+- `app.rpc.permissions` provides predicate/check factories. Failed permission checks intentionally raise `:not-found` / `:object-not-found`, not an authorization-specific error, to avoid leaking object existence.
+- Team role flags are normalized as owner > admin > editor > viewer. Owner/admin imply edit; any membership row implies read.
+- File/project/comment checks are implemented in the owning command namespaces, often via helpers imported from `files`, `teams`, or `projects`; do not bypass those helpers with direct DB lookups unless preserving their not-found semantics.
+- Comment permission includes both logged-in state and the file/team comment policy. Shared viewer paths may pass `share-id`; preserve that path when changing comment queries.
+
+## Teams, projects, and invitations
+
+- Team/project commands mix DB changes, email, message bus notifications, media/storage cleanup, feature flags, quotas, and audit metadata. Keep mutations transactional when the existing command does so.
+- Invitation flows validate muted/bounced emails before sending and use tokenized invitation state. Accepting an invitation is tied to the invited member identity, not just possession of a token.
+- Logical deletion is used for many product objects; prefer existing logical-deletion helpers over hard deletes unless the command already performs permanent cleanup.
+
+## Comments, webhooks, and audit
+
+- Comment thread queries join file/project/profile state and exclude deleted files/projects. Unread comment counts depend on `comment_thread_status.modified_at` and profile notification preferences.
+- Webhook edits are allowed for team editors/admins or the webhook creator. Webhook validation performs a synchronous HEAD request with a short timeout; validation errors are mapped through `app.loggers.webhooks`.
+- Audit events are prepared from RPC metadata, result metadata, params, request context, and selected auth identifiers. Webhook event batching can be controlled through audit/webhook metadata on commands or results.
+- Webhook and audit logging are cross-cutting side effects of product commands; when adding a command, check nearby command metadata and result metadata patterns before inventing a new event shape.
+
+## Validation
+
+- Backend domain tests usually live under `backend/test/backend_tests/rpc/commands/*_test.clj` or nearby backend test namespaces. Use focused `clojure -M:dev:test --focus ...` from `backend/` when possible.
+- For auth/session or HTTP behavior, combine backend tests with the HTTP/session notes in `backend/http-storage-filedata-subtleties` because RPC-level tests may not exercise cookie/header transforms.
