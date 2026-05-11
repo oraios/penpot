@@ -30,6 +30,13 @@ Use this first after `critical-info` when starting a Penpot task from the memory
 - `library/`: design library workflows. Read `library/architecture-and-workflow` when touching library semantics.
 - `docs/`: documentation site. Read `workflow/docs` for docs-only changes.
 
+## Low-centrality paths
+
+- `docker/` and root tooling are covered by `project/dev-ci-environment-workflow`; root scripts such as `scripts/lint`, `scripts/check-fmt`, and `scripts/fmt` are wrappers around module-local checks.
+- `experiments/` contains standalone experimental HTML/JS/scripts; treat it as non-core unless the user explicitly asks about it.
+- `sample_media/` contains sample image/icon media and config used as fixtures/demo material; do not infer app behavior from it.
+- `.opencode/`, `opencode.json`, and agent/tooling config are project-local AI/dev tooling, not Penpot runtime code.
+
 ## Dependency graph
 
 `frontend -> common`, `backend -> common`, `exporter -> common`, and `frontend -> render-wasm`. Changes in `common` can affect frontend, backend, exporter, file migrations, and design-library behavior; validate across consumers when semantics change.

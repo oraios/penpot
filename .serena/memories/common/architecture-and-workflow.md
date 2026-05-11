@@ -5,7 +5,7 @@ Use this for `common/` work after `project/agent-workflow-and-module-map`. The m
 ## Stable namespace map
 
 - `app.common.data` and `app.common.data.macros`: generic data helpers and performance macros that do not depend on Penpot domain entities.
-- `app.common.types.*`: shared shape/file/page/component/token data types, schemas, predicates, and entity-local operations.
+- `app.common.types.*`: shared shape/file/page/component/token data types, schemas, predicates, and entity-local operations. `app.common.types.nitrate-permissions` contains shared fail-closed Nitrate organization/team permission rules.
 - `app.common.files.*`: file-level operations, shape tree helpers, change application, migrations, validation, and undo/redo-related logic.
 - `app.common.logic.*`: higher-level workflows/algorithms over files, shapes, components, variants, libraries, tokens, etc.
 - `app.common.geom.*`: geometry helpers and transformations.
@@ -34,8 +34,14 @@ Geometry, component, migration, validation, and change-pipeline behavior is espe
 - file mutation/change records: `common/changes-architecture`, `common/file-change-validation-migration-subtleties`;
 - components/variants: `common/component-data-model`, `common/component-swap-pipeline`;
 - debugging common change/component behavior: `common/component-debugging-recipes`;
-- layout/text/tokens/schema: `common/layout-text-token-subtleties`;
+- layout/grid behavior: `common/layout-grid-subtleties`;
+- text data behavior: `common/text-subtleties`;
+- tokens and schema/coercion: `common/tokens-schema-subtleties`;
 - tests: `common/test-setup`.
+
+## Areas without focused memories
+
+Common areas with little or no dedicated memory include colors, media/SVG helpers, path operations, thumbnail helpers, generic pools, weak refs, and some utility namespaces. Treat work there as source/test-led unless a focused memory exists.
 
 ## Commands
 

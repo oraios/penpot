@@ -30,7 +30,7 @@ Use with `frontend/architecture-and-workflow` when changing app UI components, S
 - Translations must be resolved during render or render-time memoization, not at namespace load time. For static option lists, memoize inside render so locale changes still update labels.
 - Translation files live in `frontend/translations/*.po`. Translation changes are bundled into `index.html`; refresh the browser after changing translations because there is no hot reload for translation strings.
 - Run `pnpm run translations` from `frontend/` after adding/updating translation text.
-- Adding a new supported locale requires updates in both `frontend/src/app/util/i18n.cljs` (`supported-locales`) and `frontend/gulpfile.js` (`langs`).
+- Adding a new supported locale requires updates in both `frontend/src/app/util/i18n.cljs` (`supported-locales`) and `frontend/scripts/_helpers.js` (`langs`).
 
 ## Performance
 
@@ -49,7 +49,7 @@ Use with `frontend/architecture-and-workflow` when changing app UI components, S
 - Put editor/dashboard/viewer workflow logic in CLJS app namespaces close to the owning feature.
 - Put reusable presentational React primitives in `frontend/packages/ui` when they can be consumed without Penpot app state.
 - Put CLJS design-system components under `frontend/src/app/main/ui/ds`; new DS components need implementation, CSS module, Storybook story, optional MDX docs, and export from `frontend/src/app/main/ui/ds.cljs` with a JavaScript-friendly name.
-- Put text editing internals in `frontend/text-editor` when the behavior belongs to the JS editor package; use `common/layout-text-token-subtleties` for shared text data-model behavior.
+- Put text editing internals in `frontend/text-editor` when the behavior belongs to the JS editor package; use `common/text-subtleties` for shared text data-model behavior.
 
 ## Validation
 

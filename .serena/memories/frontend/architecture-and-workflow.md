@@ -4,14 +4,15 @@ Use this for frontend work after `project/agent-workflow-and-module-map`. The fr
 
 ## Stable namespace map
 
-- `app.main.ui.*`: Rumext/React UI components for workspace, dashboard, viewer, etc.
+- `app.main.ui.*`: Rumext/React UI components for workspace, dashboard, viewer, settings, auth, nitrate, etc.
 - `app.main.data.*`: Potok event handlers and side effects.
 - `app.main.refs`: reactive refs/lenses over store and derived workspace data.
 - `app.main.store`: Potok store and `emit!`.
 - `app.plugins.*` and `app.plugins`: CLJS implementation of Plugin JS API proxies.
 - `app.render_wasm.*`: frontend bridge to Rust/WASM renderer.
-- `app.util.*`: DOM, HTTP, i18n, keyboard, and general frontend utilities.
+- `app.util.*`: DOM, HTTP, i18n, keyboard, codegen, and general frontend utilities.
 - `frontend/packages/*` and `frontend/text-editor`: JS/TS workspace packages consumed by the app; read `frontend/ui-packages-text-editor-workflow` before changing them.
+- Nitrate subscription/organization UI and flows live under `app.main.data.nitrate` and `app.main.ui.nitrate*`; backend/API behavior is in `backend/architecture-and-workflow`, and shared permission rules are in `common/src/app/common/types/nitrate_permissions.cljc`.
 
 ## Component and style conventions
 
@@ -27,7 +28,9 @@ When UI logic grows inside a component, extract local pure helpers or move reusa
 
 ## High-value related memories
 
-- Routing, app shell, dashboard/viewer flows, websocket, token application: `frontend/routing-viewer-dashboard-token-subtleties`.
+- Routing, app shell, websocket, and global errors: `frontend/routing-app-shell-subtleties`.
+- Dashboard and viewer flows: `frontend/dashboard-viewer-subtleties`.
+- Workspace token application/propagation: `frontend/workspace-token-subtleties` plus common token details in `common/tokens-schema-subtleties`.
 - Workspace state, commits, persistence, refs: `frontend/workspace-state-persistence-subtleties`.
 - Workspace transforms/modifier previews: `frontend/workspace-transform-subtleties`.
 - Plugin JS API runtime: `frontend/plugin-api-runtime-subtleties`.
@@ -38,3 +41,7 @@ When UI logic grows inside a component, extract local pure helpers or move reusa
 - Runtime crash recovery: `frontend/handling-crashes`.
 - Testing and live verification: `frontend/testing`.
 - Real input reproduction: `frontend/playwright-gestures`.
+
+## Areas without focused memories
+
+These frontend areas currently have no dedicated Serena memory beyond this architecture entry and nearby source/tests: clipboard, drawing tools, boolean/path operations, interactions/prototyping, color/style asset management, grid-layout editing UI, comments UI, fonts UI, and many dashboard/settings subflows. Treat work there as less memory-covered and inspect source/tests more carefully.

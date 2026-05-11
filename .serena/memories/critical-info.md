@@ -8,7 +8,13 @@ You are working on the GitHub project `penpot/penpot`.
 
 # Memory maintenance while working
 
-When code exploration reveals a stable, non-obvious project convention that would help future agents avoid complex rediscovery, update or add the relevant memory before finishing. Keep memories terse, generalizable, and tied to durable behavior rather than one task. When adding, renaming, splitting, or moving a memory, update cross-references in `critical-info`, `project/agent-workflow-and-module-map`, or the affected module architecture memory so incremental discovery still works.
+When code exploration reveals a stable, non-obvious project convention that would help future agents avoid complex rediscovery, update or add the relevant memory before finishing. Keep memories terse, generalizable, and tied to durable behavior rather than one task.
+
+Do not add a memory for facts that are obvious from a quick read/rg/grep, generic language/framework knowledge, one-off task notes, volatile line-level implementation details, or behavior likely to change soon. When a memory mentions operational constants such as timeouts, batch sizes, caps, or intervals, phrase them as current behavior and verify the owning namespace before changing those semantics.
+
+Split a memory when it becomes a catch-all whose sections are commonly needed independently, or when agents must read unrelated domains to reach the topic they need. Retire/delete a memory when the owning module/subsystem is removed or replaced, and remove all references to it.
+
+When adding, renaming, splitting, moving, or deleting a memory, update cross-references in `critical-info`, `project/agent-workflow-and-module-map`, and affected module architecture memories so incremental discovery still works. Before finishing memory maintenance, list memories for old memory names and key new memory names to catch stale or missing references.
 
 # Cross-module caution
 

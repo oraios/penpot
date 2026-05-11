@@ -4,7 +4,7 @@ Use this for renderer work after `project/agent-workflow-and-module-map`. `rende
 
 ## Stable Architecture
 
-- Exported functions live around `src/lib.rs` / `src/wapi.rs` and are called from ClojureScript bridge namespaces under `frontend/src/app/render_wasm*`.
+- Exported functions live around `src/main.rs` / `src/wapi.rs` and are called from ClojureScript bridge namespaces under `frontend/src/app/render_wasm*`.
 - Global renderer state is a single unsafe `State`; access it only through the established `with_state!` / `with_state_mut!` macros.
 - Rendering is tile-based: only viewport-relevant 512x512 tiles plus buffer are drawn.
 - Updates are two-phase: ClojureScript calls exported setters to push shape data, then `render_frame()` performs Skia drawing.

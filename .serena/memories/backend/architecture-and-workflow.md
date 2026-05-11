@@ -17,10 +17,13 @@ For stable non-obvious RPC/DB/worker behavior, read `backend/rpc-db-worker-subtl
 - `app.main`: Integrant system map and component wiring.
 - `app.config`: `PENPOT_*` env config and feature flags.
 - `app.srepl.*`: development REPL helpers for manual backend operations.
+- `app.nitrate`, `app.rpc.commands.nitrate`, and `app.rpc.management.nitrate`: external Nitrate subscription/organization integration, gated by the `:nitrate` feature flag and shared-key HTTP calls.
 
 ## RPC conventions
 
 RPC commands are defined with `app.util.services/defmethod` and schemas. Use `get-` prefixes for read operations. Command metadata usually includes auth, docs version, params schema, and result schema. Return plain maps/vectors or raise structured exceptions from `app.common.exceptions`.
+
+Backend RPC command areas without focused memories include access tokens, binfile, demo, feedback, file snapshots, fonts, management, Nitrate, and webhooks beyond the notes in `backend/auth-permissions-product-domains`; inspect nearby command tests and command metadata before changing them.
 
 ## DB conventions
 
