@@ -28,7 +28,7 @@ Workspace behavior:
 App shell and product flows:
 - Routing, root app shell, websocket, and global errors: `mem:frontend/routing-app-shell-subtleties`.
 - Dashboard and viewer flows: `mem:frontend/dashboard-viewer-subtleties`.
-- Plugin JS API runtime inside the frontend app: `mem:frontend/plugin-api-runtime-subtleties`.
+- Plugin JS API runtime inside the frontend app: `mem:frontend/plugin-api-to-cljs-binding`.
 
 Diagnostics and validation:
 - Runtime inspection and navigation: `mem:frontend/cljs-repl`.

@@ -40,7 +40,7 @@ semantics change.
 # Working with Penpot designs
 
 - Before automating or inspecting Penpot designs through the Plugin API, call the Penpot MCP `high_level_overview` tool.
-- connection between the JavaScript API and the ClojureScript code: `mem:frontend/plugin-api-to-cljs-binding`.
+- connection between the JavaScript plugin API and the ClojureScript code: `mem:frontend/plugin-api-to-cljs-binding`.
 - executing ClojureScript code in the frontend: `mem:frontend/cljs-repl`.
 - handling Clojure compiler errors, runtime patching and debug helpers: `mem:frontend/handling-errors-and-debugging`.
 
