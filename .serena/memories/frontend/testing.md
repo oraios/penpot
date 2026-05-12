@@ -1,6 +1,6 @@
 # Frontend Testing and Live Verification
 
-Use with `frontend/architecture-and-workflow` for frontend validation. Frontend code is ClojureScript + React/Rumext + RxJS/Potok state, with SCSS modules and shared CLJC dependencies from `common/`.
+Use for frontend validation. Frontend code is ClojureScript + React/Rumext + RxJS/Potok state, with SCSS modules and shared CLJC dependencies from `common/`.
 
 ## Unit tests
 
@@ -37,10 +37,4 @@ From `frontend/`:
 
 Because CLJC compiles to both JVM and CLJS, JVM/common tests can miss frontend-only state caused by browser runtime, WASM modifier math, or real pointer events. Use `frontend/cljs-repl` to inspect live app state and `frontend/playwright-gestures` when real input is needed.
 
-After CLJ/CLJC/CLJS edits, use `frontend/compile-diagnostics` if the app does not hot-reload or behavior appears stale. If the live workspace behaves oddly after automation and the compiler is healthy, read `frontend/handling-crashes` and check `(some? (:exception @app.main.store/state))`.
-
-## CLJC hot reload and translations
-
-When the frontend shadow-cljs watch process is running, edits to CLJC files in `common/` are automatically recompiled and pushed to the browser. No page reload is normally required. If hot reload fails, follow `frontend/compile-diagnostics` before restarting.
-
-Translation `.po` changes are different: they are bundled into `index.html` and require a browser refresh, not hot reload.
+For stale hot reload or failed CLJ/CLJC/CLJS source builds, read `frontend/compile-diagnostics`. For Internal Error pages or delayed runtime crashes after automation/API actions, read `frontend/handling-crashes`. Translation `.po` changes are bundled into `index.html` and require a browser refresh.

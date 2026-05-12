@@ -34,9 +34,7 @@ The applier uses the same `process-operation` multimethod as production (`common
 
 ## :touched and geometry
 
-When a `:set` op changes a geometry attr on a shape with `:shape-ref`, `:ignore-geometry` controls whether `:geometry-group` is added to `:touched`. `:ignore-touched` suppresses touched updates for any attr.
-
-Interactive transform/modifier code computes per-shape `ignore-geometry?` through the ignore-tree/check-delta path. A pure translation of a component copy can avoid marking every descendant as geometry-touched, while resize/rotation still propagates touched state.
+For component touched semantics and sync groups, read `common/component-data-model`. For the exact `set-shape-attr` / second-pass behavior during change application, read `common/file-change-validation-migration-subtleties`. For transform-specific ignore-geometry behavior, read `frontend/workspace-transform-subtleties`.
 
 ## Inspection
 

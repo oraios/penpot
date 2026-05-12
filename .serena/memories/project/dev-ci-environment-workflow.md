@@ -1,6 +1,6 @@
 # Project Dev, Docker, and CI Environment Workflow
 
-Use after `project/agent-workflow-and-module-map` when changing setup scripts, Docker/devenv files, root tooling, CI workflows, feature-flag setup, or cross-module validation. For module-specific commands, prefer the module architecture/testing memories.
+Use when changing setup scripts, Docker/devenv files, root tooling, CI workflows, feature-flag setup, or cross-module validation. For module-specific commands, prefer the relevant module memories.
 
 ## Root tooling
 

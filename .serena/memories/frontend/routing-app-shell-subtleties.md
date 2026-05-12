@@ -1,6 +1,6 @@
 # Frontend Routing, App Shell, Websocket, and Error Subtleties
 
-Use with `frontend/architecture-and-workflow` when changing app startup/routing, root app shell, websocket initialization, global error behavior, or route/query handling.
+Use when changing app startup/routing, root app shell, websocket initialization, global error behavior, or route/query handling.
 
 ## Router, app shell, and errors
 
@@ -13,7 +13,7 @@ Use with `frontend/architecture-and-workflow` when changing app startup/routing,
 
 ## Store and websocket
 
-- `app.main.store/emit!` always returns nil; use streams/events for completion, not the return value.
-- Store `last-events` is a filtered rolling buffer useful for error reports and REPL diagnosis.
+For general store mechanics such as `emit!`, `last-events`, persistence, and undo, read `frontend/workspace-state-persistence-subtleties`.
+
 - Websocket initialization uses `cf/public-uri` joined with `ws/notifications`, converting `http/https` to `ws/wss`, and includes the current `session-id` as query param.
 - Reinitializing or finalizing websocket stops the previous receive stream. Incoming websocket payloads become Potok data events under `app.main.data.websocket/message`.

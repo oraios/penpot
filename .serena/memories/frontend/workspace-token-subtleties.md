@@ -1,6 +1,6 @@
 # Frontend Workspace Token Subtleties
 
-Use with `frontend/architecture-and-workflow` when changing workspace token refs, token application, token propagation, or applied-token UI behavior. For shared token data model, serialization, and schema behavior, also read `common/tokens-schema-subtleties`.
+Use when changing workspace token refs, token application, token propagation, or applied-token UI behavior. For shared token data model, serialization, and schema behavior, also read `common/tokens-schema-subtleties`.
 
 ## Token refs and visibility
 

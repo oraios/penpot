@@ -38,7 +38,7 @@ For shape mutations, prefer production-path helpers such as `cls/generate-update
 
 ## Geometry setup caution
 
-Do not position shapes by directly associng `:x`/`:y` or by updating only one geometry field. Use `gsh/move`, `gsh/absolute-move`, or production change helpers so `:x/:y`, `:selrect`, `:points`, and transforms stay coherent. Read `common/geometry-invariants` before writing geometry-sensitive tests.
+For geometry-sensitive tests, read `common/geometry-invariants` before positioning shapes. Use geometry-preserving helpers or production change helpers rather than direct single-field edits.
 
 ## Debugging
 

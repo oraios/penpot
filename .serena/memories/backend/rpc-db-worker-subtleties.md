@@ -1,6 +1,6 @@
 # Backend RPC/DB/Worker Subtleties
 
-Use with `backend/architecture-and-workflow` when changing RPC commands, DB transaction behavior, task workers, or cron jobs.
+Use when changing RPC commands, DB transaction behavior, task workers, or cron jobs.
 
 ## RPC exposure and wrappers
 

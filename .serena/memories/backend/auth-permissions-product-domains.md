@@ -1,6 +1,6 @@
 # Backend Auth, Permissions, and Product Domain Subtleties
 
-Use with `backend/architecture-and-workflow` when changing authentication providers, profile/team/project permissions, invitations, comments, webhooks, audit logging, or management/product RPC commands. For generic RPC wrapper and DB transaction behavior, also read `backend/rpc-db-worker-subtleties`.
+Use when changing authentication providers, profile/team/project permissions, invitations, comments, webhooks, audit logging, or management/product RPC commands. For generic RPC wrapper and DB transaction behavior, also read `backend/rpc-db-worker-subtleties`.
 
 ## Auth and sessions
 

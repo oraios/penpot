@@ -1,6 +1,6 @@
 # Common Text Subtleties
 
-Use with `common/architecture-and-workflow` when changing shared text data conversion, DraftJS compatibility, modern text content structure, or derived text position data. For frontend text editor package workflow, read `frontend/ui-packages-text-editor-workflow`.
+Use when changing shared text data conversion, DraftJS compatibility, modern text content structure, or derived text position data. For frontend text editor package workflow, read `frontend/ui-packages-text-editor-workflow`.
 
 ## DraftJS compatibility
 

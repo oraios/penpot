@@ -1,6 +1,6 @@
 # Common Architecture and Workflow
 
-Use this for `common/` work after `project/agent-workflow-and-module-map`. The module is shared CLJC used by frontend, backend, exporter, library/file tooling, and some tests; small behavior changes can affect multiple runtimes.
+Use this as the `common/` introductory memory. The module is shared CLJC used by frontend, backend, exporter, library/file tooling, and some tests; small behavior changes can affect multiple runtimes.
 
 ## Stable namespace map
 
@@ -26,30 +26,30 @@ Respect the intended abstraction direction in new/refactored code:
 
 Some legacy code violates this layering; do not copy those violations into new code when a focused refactor is practical.
 
-## Focused memories
+## Focused memory routing
 
-Geometry, component, migration, validation, and change-pipeline behavior is especially subtle. Before changing those areas, read the targeted memories:
-- model changes and cross-module checklist: `common/data-model-change-checklist`;
-- geometry: `common/geometry-invariants`, `common/decimals-and-coordinates`;
-- file mutation/change records: `common/changes-architecture`, `common/file-change-validation-migration-subtleties`;
-- components/variants: `common/component-data-model`, `common/component-swap-pipeline`;
-- debugging common change/component behavior: `common/component-debugging-recipes`;
-- layout/grid behavior: `common/layout-grid-subtleties`;
-- text data behavior: `common/text-subtleties`;
-- tokens and schema/coercion: `common/tokens-schema-subtleties`;
-- tests: `common/test-setup`.
+Model, schema, and persistence shape:
+- File/page/shape/component attr changes, import/export surfaces, inspector/codegen, and cross-module checklist: `common/data-model-change-checklist`.
+- Token data structures, token import/export, active theme/set semantics, and schema/coercion behavior: `common/tokens-schema-subtleties`.
+
+Geometry and layout:
+- Shape geometry invariants, redundant geometry fields, and geometry-sensitive tests: `common/geometry-invariants`.
+- Coordinate drift and approximate float comparisons: `common/decimals-and-coordinates`.
+- Layout/grid assignment, deassignment, metadata cleanup, and auto-positioning: `common/layout-grid-subtleties`.
+
+Change pipeline, validation, and migrations:
+- Change records, undo/redo architecture, changes-builder API, and production-path mutation guidance: `common/changes-architecture`.
+- Change application, shape-tree edits, validation/repair, migrations, and second-pass touched behavior: `common/file-change-validation-migration-subtleties`.
+
+Components, variants, and debugging:
+- Component/variant data model, ref chains, touched override semantics, and cloning paths: `common/component-data-model`.
+- Component swap, variant switch, and keep-touched pipeline: `common/component-swap-pipeline`.
+- Live inspection snippets, temporary runtime patching, and test-side debugging helpers for common change/component behavior: `common/component-debugging-recipes`.
+
+Text and tests:
+- Shared text data conversion, DraftJS compatibility, modern text content, and derived position data: `common/text-subtleties`.
+- Common test commands, helper conventions, production-path test mutations, and runtime coverage choices: `common/test-setup`.
 
 ## Areas without focused memories
 
 Common areas with little or no dedicated memory include colors, media/SVG helpers, path operations, thumbnail helpers, generic pools, weak refs, and some utility namespaces. Treat work there as source/test-led unless a focused memory exists.
-
-## Commands
-
-From `common/`:
-- JVM tests: `pnpm run test:jvm` or `clojure -M:dev:test`.
-- Focused JVM test: `pnpm run test:jvm --focus common-tests.some-ns-test` or `clojure -M:dev:test --focus ...`.
-- JS tests: `pnpm run test:js`.
-- Focused JS tests: edit `test/common_tests/runner.cljs`, then run `pnpm run test:js`.
-- Watch JS tests: `pnpm run watch:test`.
-- Lint: `pnpm run lint` or `pnpm run lint:clj`.
-- Format check/fix: `pnpm run check-fmt:clj` / `pnpm run fmt:clj`; JS helpers use `check-fmt:js` / `fmt:js`.

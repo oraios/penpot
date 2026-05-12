@@ -1,6 +1,6 @@
 # Common Data Model Change Checklist
 
-Use with `common/architecture-and-workflow` when adding or changing file/page/shape/component attributes or behavior that affects persisted Penpot files, SVG import/export, inspector output, or generated code.
+Use when adding or changing file/page/shape/component attributes or behavior that affects persisted Penpot files, SVG import/export, inspector output, or generated code.
 
 ## Attribute conventions
 
@@ -25,7 +25,3 @@ When changing the file data model, check the relevant paths:
 Existing files should keep working unchanged when possible. If absence cannot preserve old behavior, add a migration and preserve append/order semantics described in `common/file-change-validation-migration-subtleties`.
 
 Model changes can also require file feature flags or migration metadata updates; check nearby migrations and `common/src/app/common/features.cljc` before inventing a new pattern.
-
-## Layering rule
-
-Prefer the abstraction direction described in `common/architecture-and-workflow`: domain entity invariants belong in `app.common.types.*`, multi-entity file operations in `app.common.files.*`, serializable mutations in `changes*`, and higher workflow/business algorithms in `app.common.logic.*` or frontend/backend event layers.

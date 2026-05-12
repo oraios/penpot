@@ -1,14 +1,12 @@
 # render-wasm Architecture and Workflow
 
-Use this for renderer work after `project/agent-workflow-and-module-map`. `render-wasm/` is a Rust crate compiled to WebAssembly through Emscripten and Skia; the frontend loads the generated JS/WASM renderer. For stable FFI/memory/tile invalidation behavior, also read `render-wasm/ffi-rendering-subtleties`.
+Use this as the `render-wasm/` introductory memory. `render-wasm/` is a Rust crate compiled to WebAssembly through Emscripten and Skia; the frontend loads the generated JS/WASM renderer. For stable FFI/memory/tile invalidation behavior, also read `render-wasm/ffi-rendering-subtleties`.
 
 ## Stable Architecture
 
 - Exported functions live around `src/main.rs` / `src/wapi.rs` and are called from ClojureScript bridge namespaces under `frontend/src/app/render_wasm*`.
-- Global renderer state is a single unsafe `State`; access it only through the established `with_state!` / `with_state_mut!` macros.
-- Rendering is tile-based: only viewport-relevant 512x512 tiles plus buffer are drawn.
 - Updates are two-phase: ClojureScript calls exported setters to push shape data, then `render_frame()` performs Skia drawing.
-- Shapes are stored in a flat UUID-indexed pool; hierarchy is tracked separately.
+- Rendering is tile-based and shape data is stored separately from hierarchy. For FFI state, memory ownership, shape loading, and tile invalidation details, read `render-wasm/ffi-rendering-subtleties`.
 
 ## Source Areas
 

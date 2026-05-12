@@ -1,6 +1,6 @@
 # Frontend UI Conventions and Style System
 
-Use with `frontend/architecture-and-workflow` when changing app UI components, SCSS modules, shared UI primitives, design-system components, or Storybook-facing UI behavior.
+Use when changing app UI components, SCSS modules, shared UI primitives, design-system components, or Storybook-facing UI behavior.
 
 ## CLJS app UI
 

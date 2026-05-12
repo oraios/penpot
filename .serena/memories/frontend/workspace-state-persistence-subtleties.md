@@ -1,6 +1,6 @@
 # Frontend Workspace State and Persistence Subtleties
 
-Use with `frontend/architecture-and-workflow` when changing workspace state, commits, persistence, undo, repo calls, or derived refs.
+Use when changing workspace state, commits, persistence, undo, repo calls, or derived refs.
 
 ## Store and interaction streams
 

@@ -1,6 +1,6 @@
 # render-wasm FFI and Rendering Subtleties
 
-Use with `render-wasm/architecture-and-workflow` when changing exported WASM functions, memory ownership, shape loading, tile invalidation, or interactive rendering.
+Use when changing exported WASM functions, memory ownership, shape loading, tile invalidation, or interactive rendering.
 
 ## FFI state and errors
 

@@ -1,6 +1,6 @@
 # Backend HTTP, Storage, Media, and File Data Subtleties
 
-Use with `backend/architecture-and-workflow` when changing request/session middleware, object storage/media processing, or file-data persistence.
+Use when changing request/session middleware, object storage/media processing, or file-data persistence.
 
 ## Config and HTTP/session middleware
 

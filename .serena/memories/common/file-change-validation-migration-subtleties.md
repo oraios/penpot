@@ -1,6 +1,6 @@
 # Common File Change, Validation, and Migration Subtleties
 
-Use with `common/changes-architecture` when changing file change application, shape tree edits, validation/repair, migrations, or touched behavior. For broader model changes, also read `common/data-model-change-checklist`.
+Use when changing file change application, shape tree edits, validation/repair, migrations, or touched behavior. For broader model changes, also read `common/data-model-change-checklist`.
 
 ## Change application
 
@@ -28,4 +28,3 @@ Use with `common/changes-architecture` when changing file change application, sh
 - Migrations are an ordered set mixing legacy version-derived ids and newer named ids. Keep append order stable; `migrate` applies the set difference between available migrations and file migrations.
 - `migrate-file` synthesizes legacy migration ids from old numeric versions when `:migrations` is absent, migrates legacy features, and records feature flags created through `cfeat/*new*`.
 - When a file had no previous `:migrations`, `migrate-file` marks all migrations as migrated in metadata so callers persist the complete migration set, not only transformations that changed data.
-- Model changes may also require updates to export/import, edit forms, component sync attrs, and inspector/codegen paths; use `common/data-model-change-checklist`.

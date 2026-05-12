@@ -1,6 +1,6 @@
 # Common Layout and Grid Subtleties
 
-Use with `common/architecture-and-workflow` when changing common layout logic, grid layout assignment/deassignment, layout metadata cleanup, or auto-positioning behavior.
+Use when changing common layout logic, grid layout assignment/deassignment, layout metadata cleanup, or auto-positioning behavior.
 
 ## Layout metadata
 
