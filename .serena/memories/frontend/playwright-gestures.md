@@ -44,6 +44,4 @@ async (page) => {
 
 ## Coordinate Planning
 
-Penpot canvas coordinates are not the same as browser screen coordinates. Query shape geometry through the JS API or cljs-repl, then account for workspace zoom/pan, or use a screenshot to calibrate screen coordinates for the current session.
-
-After the gesture commits, inspect app state with `mem:frontend/cljs-repl`, especially `@app.main.refs/workspace-page-objects`, undo transactions, and selected shape ids.
+For reliably finding pixel positions of objects, see `mem:frontend/penpot-to-browser-coords`.
