@@ -2,7 +2,7 @@
 
 Backend intro: JVM Clojure; Integrant; PostgreSQL; Redis/Valkey; RPC; HTTP; storage; mail; audit/logging; workers.
 
-Focused routing: RPC/DB/workers -> `backend/rpc-db-worker-subtleties`; HTTP/session/storage/media/file-data -> `backend/http-storage-filedata-subtleties`; auth/permissions/product domains -> `backend/auth-permissions-product-domains`.
+Focused routing: RPC/DB/workers -> `mem:backend/rpc-db-worker-subtleties`; HTTP/session/storage/media/file-data -> `mem:backend/http-storage-filedata-subtleties`; auth/permissions/product domains -> `mem:backend/auth-permissions-product-domains`.
 
 ## Stable namespace map
 
@@ -23,7 +23,7 @@ Focused routing: RPC/DB/workers -> `backend/rpc-db-worker-subtleties`; HTTP/sess
 
 RPC commands are defined with `app.util.services/defmethod` and schemas. Use `get-` prefixes for read operations. Command metadata usually includes auth, docs version, params schema, and result schema. Return plain maps/vectors or raise structured exceptions from `app.common.exceptions`.
 
-Backend RPC command areas without focused memories include access tokens, binfile, demo, feedback, file snapshots, fonts, management, Nitrate, and webhooks beyond the notes in `backend/auth-permissions-product-domains`; inspect nearby command tests and command metadata before changing them.
+Backend RPC command areas without focused memories include access tokens, binfile, demo, feedback, file snapshots, fonts, management, Nitrate, and webhooks beyond the notes in `mem:backend/auth-permissions-product-domains`; inspect nearby command tests and command metadata before changing them.
 
 ## DB conventions
 

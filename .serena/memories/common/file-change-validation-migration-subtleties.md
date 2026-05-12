@@ -1,6 +1,6 @@
 # Common File Change, Validation, and Migration Subtleties
 
-Use when changing file change application, shape tree edits, validation/repair, migrations, or touched behavior. For broader model changes, also read `common/data-model-change-checklist`.
+Use when changing file change application, shape tree edits, validation/repair, migrations, or touched behavior. For broader model changes, also read `mem:common/data-model-change-checklist`.
 
 ## Change application
 

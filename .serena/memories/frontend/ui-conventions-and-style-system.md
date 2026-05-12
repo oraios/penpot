@@ -42,17 +42,17 @@ Use when changing app UI components, SCSS modules, shared UI primitives, design-
 
 - `frontend/packages/ui` is the shared React/Vite package. It should remain framework-neutral relative to the CLJS app store; reusable primitives belong here only when they do not depend on Potok/Rumext app state.
 - Package styles are emitted through the package build and copied into `frontend/resources/public/css/ui.css`; stale shared styles are often a build artifact issue.
-- Storybook is the primary visual harness for shared UI/package behavior. Use `frontend/ui-packages-text-editor-workflow` for package build/test commands.
+- Storybook is the primary visual harness for shared UI/package behavior. Use `mem:frontend/ui-packages-text-editor-workflow` for package build/test commands.
 
 ## Choosing a location
 
 - Put editor/dashboard/viewer workflow logic in CLJS app namespaces close to the owning feature.
 - Put reusable presentational React primitives in `frontend/packages/ui` when they can be consumed without Penpot app state.
 - Put CLJS design-system components under `frontend/src/app/main/ui/ds`; new DS components need implementation, CSS module, Storybook story, optional MDX docs, and export from `frontend/src/app/main/ui/ds.cljs` with a JavaScript-friendly name.
-- Put text editing internals in `frontend/text-editor` when the behavior belongs to the JS editor package; use `common/text-subtleties` for shared text data-model behavior.
+- Put text editing internals in `frontend/text-editor` when the behavior belongs to the JS editor package; use `mem:common/text-subtleties` for shared text data-model behavior.
 
 ## Validation
 
-- For CLJS app UI, use `frontend/testing`, `frontend/compile-diagnostics`, and live browser/REPL checks when behavior depends on store or canvas state.
+- For CLJS app UI, use `mem:frontend/testing`, `mem:frontend/compile-diagnostics`, and live browser/REPL checks when behavior depends on store or canvas state.
 - For shared UI package changes, run the package build plus Storybook/component tests when relevant.
 - For text editor changes, run `frontend/text-editor` tests and refresh/copy WASM artifacts if render-wasm output is involved.

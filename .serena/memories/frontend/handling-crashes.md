@@ -1,6 +1,6 @@
 # Frontend Runtime Crash Handling
 
-Use this when the Penpot frontend reaches the Internal Error page or automation/API actions seem to succeed and then the workspace crashes. For source-edit build failures or stale hot reload, read `frontend/compile-diagnostics` first.
+Use this when the Penpot frontend reaches the Internal Error page or automation/API actions seem to succeed and then the workspace crashes. For source-edit build failures or stale hot reload, read `mem:frontend/compile-diagnostics` first.
 
 ## Detect a runtime workspace crash
 

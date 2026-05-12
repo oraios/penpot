@@ -45,7 +45,7 @@ transform. The `set-shape-attr`-style precedent (already using
 ## The redundancy multiplies failure modes
 
 A shape's position lives in `:x/:y`, `:selrect`, AND `:points` (see
-`common/geometry-invariants` memory). Each is a separate set of float
+`mem:common/geometry-invariants` memory). Each is a separate set of float
 values. After any operation that touches geometry, all three should
 agree, but each is computed by a different path and accumulates
 its own drift. Comparing `:selrect.width` from shape A to

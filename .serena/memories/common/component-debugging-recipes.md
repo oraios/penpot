@@ -1,6 +1,6 @@
 # Common Component and Change Debugging Recipes
 
-Use after the conceptual memories (`common/changes-architecture`, `common/component-data-model`, `common/component-swap-pipeline`) when you need to inspect live transactions or instrument component/variant behavior. Keep source changes out of these recipes unless the task requires a durable fix.
+Use after the conceptual memories (`mem:common/changes-architecture`, `mem:common/component-data-model`, `mem:common/component-swap-pipeline`) when you need to inspect live transactions or instrument component/variant behavior. Keep source changes out of these recipes unless the task requires a durable fix.
 
 ## Inspect recent workspace changes
 

@@ -1,6 +1,6 @@
 # Common Tokens and Schema Subtleties
 
-Use when changing design-token data structures, token import/export, active theme/set semantics, token serialization, or shared schema/coercion behavior. For frontend workspace application/propagation behavior, also read `frontend/workspace-token-subtleties`.
+Use when changing design-token data structures, token import/export, active theme/set semantics, token serialization, or shared schema/coercion behavior. For frontend workspace application/propagation behavior, also read `mem:frontend/workspace-token-subtleties`.
 
 ## Tokens
 

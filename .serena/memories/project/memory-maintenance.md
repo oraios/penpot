@@ -2,11 +2,13 @@
 
 ## Discovery Model
 
-- Agents always start with the full memory name list plus `critical-info`.
+- Agents always start with the full memory name list plus `mem:core`.
 - All other memory discovery comes from names plus routing already read.
 - Add routing only when names are insufficient, ambiguous, or a non-obvious dependency/order matters.
 - Do not add tautological routing such as "frontend debugging -> frontend/debugging".
 - Routing can live outside intro memories when needed, but intro memories own most module-level routing.
+- Top-level/startup memory is `mem:core`; top-level memory in each memory subfolder is `<folder>/core` (for example `mem:frontend/core`).
+- Memory references must use a mem: prefix inside backticks, e.g. `mem:frontend/core`.
 
 ## Style
 
@@ -22,8 +24,8 @@ Operational constants: phrase as current behavior; verify owning namespace befor
 
 ## Graph Ownership
 
-- Project-level routing: `project/agent-workflow-and-module-map`.
-- Module-level routing/source maps: module intro memories, usually `<module>/architecture-and-workflow`.
+- Project-level routing: `mem:project/core`.
+- Module-level routing/source maps: module core memories.
 - Focused memories: topic details only; assume relevant routing was read before selection.
 
 ## Maintenance Actions

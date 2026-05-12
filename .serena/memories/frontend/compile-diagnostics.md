@@ -1,6 +1,6 @@
 # Frontend Compile Diagnostics
 
-Use this after editing CLJ/CLJC/CLJS source when hot reload fails, behavior appears stale, or the app does not reflect source changes. This is separate from runtime crash recovery in `frontend/handling-crashes`.
+Use this after editing CLJ/CLJC/CLJS source when hot reload fails, behavior appears stale, or the app does not reflect source changes. This is separate from runtime crash recovery in `mem:frontend/handling-crashes`.
 
 ## First check the shadow-cljs build
 
@@ -9,7 +9,7 @@ Use the Penpot MCP `cljs_compiler_output` tool to inspect the latest shadow-cljs
 Recommended order after CLJ/CLJC/CLJS source edits:
 1. Run `cljs_compiler_output`.
 2. If the compiler reports a Clojure syntax problem, especially unmatched delimiters or a confusing location, run `clj_check_parentheses` on the absolute path of the suspect `.clj`, `.cljc`, or `.cljs` file.
-3. After the build is healthy, use `frontend/cljs-repl`, browser tools, or runtime crash checks for behavior.
+3. After the build is healthy, use `mem:frontend/cljs-repl`, browser tools, or runtime crash checks for behavior.
 
 ## Parentheses checker
 

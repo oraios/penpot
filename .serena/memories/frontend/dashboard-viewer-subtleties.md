@@ -1,6 +1,6 @@
 # Frontend Dashboard and Viewer Subtleties
 
-Use when changing dashboard data flows, project/file summaries, viewer initialization, shared/view-only bundles, or viewer route/query behavior. For generic routing/websocket behavior, read `frontend/routing-app-shell-subtleties`.
+Use when changing dashboard data flows, project/file summaries, viewer initialization, shared/view-only bundles, or viewer route/query behavior. For generic routing/websocket behavior, read `mem:frontend/routing-app-shell-subtleties`.
 
 ## Dashboard
 

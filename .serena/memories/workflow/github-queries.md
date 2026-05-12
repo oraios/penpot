@@ -21,5 +21,5 @@ Compare each PR author login against the collaborator list. Prefer JSON/JQ proce
 ## Safety notes
 
 - Do not create commits, branches, labels, comments, or PRs unless the user explicitly asks.
-- PR creation/update rules: `workflow/creating-prs` first.
-- Commit format/DCO signoff: `workflow/creating-commits` first.
+- PR creation/update rules: `mem:workflow/creating-prs` first.
+- Commit format/DCO signoff: `mem:workflow/creating-commits` first.

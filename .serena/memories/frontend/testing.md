@@ -35,6 +35,6 @@ From `frontend/`:
 
 ## Live browser verification
 
-Because CLJC compiles to both JVM and CLJS, JVM/common tests can miss frontend-only state caused by browser runtime, WASM modifier math, or real pointer events. Use `frontend/cljs-repl` to inspect live app state and `frontend/playwright-gestures` when real input is needed.
+Because CLJC compiles to both JVM and CLJS, JVM/common tests can miss frontend-only state caused by browser runtime, WASM modifier math, or real pointer events. Use `mem:frontend/cljs-repl` to inspect live app state and `mem:frontend/playwright-gestures` when real input is needed.
 
-For stale hot reload or failed CLJ/CLJC/CLJS source builds, read `frontend/compile-diagnostics`. For Internal Error pages or delayed runtime crashes after automation/API actions, read `frontend/handling-crashes`. Translation `.po` changes are bundled into `index.html` and require a browser refresh.
+For stale hot reload or failed CLJ/CLJC/CLJS source builds, read `mem:frontend/compile-diagnostics`. For Internal Error pages or delayed runtime crashes after automation/API actions, read `mem:frontend/handling-crashes`. Translation `.po` changes are bundled into `index.html` and require a browser refresh.

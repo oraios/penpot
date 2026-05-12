@@ -13,7 +13,7 @@ Use when changing app startup/routing, root app shell, websocket initialization,
 
 ## Store and websocket
 
-For general store mechanics such as `emit!`, `last-events`, persistence, and undo, read `frontend/workspace-state-persistence-subtleties`.
+For general store mechanics such as `emit!`, `last-events`, persistence, and undo, read `mem:frontend/workspace-state-persistence-subtleties`.
 
 - Websocket initialization uses `cf/public-uri` joined with `ws/notifications`, converting `http/https` to `ws/wss`, and includes the current `session-id` as query param.
 - Reinitializing or finalizing websocket stops the previous receive stream. Incoming websocket payloads become Potok data events under `app.main.data.websocket/message`.

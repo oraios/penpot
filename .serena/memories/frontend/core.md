@@ -17,25 +17,25 @@ Frontend intro: CLJS SPA; React/Rumext; Potok; RxJS; okulary refs; SCSS modules;
 ## Focused memory routing
 
 UI and packages:
-- App UI components, SCSS modules, style-system boundaries, accessibility, i18n, and render performance: `frontend/ui-conventions-and-style-system`.
-- JS/TS packages, shared UI package, text editor, Storybook, and package builds: `frontend/ui-packages-text-editor-workflow`.
+- App UI components, SCSS modules, style-system boundaries, accessibility, i18n, and render performance: `mem:frontend/ui-conventions-and-style-system`.
+- JS/TS packages, shared UI package, text editor, Storybook, and package builds: `mem:frontend/ui-packages-text-editor-workflow`.
 
 Workspace behavior:
-- Workspace state, commits, persistence, undo, repo calls, and refs: `frontend/workspace-state-persistence-subtleties`.
-- Workspace transforms, modifier previews, WASM modifier integration, and transform commits: `frontend/workspace-transform-subtleties`.
-- Workspace token application/propagation: `frontend/workspace-token-subtleties`; shared token data/schema: `common/tokens-schema-subtleties`.
+- Workspace state, commits, persistence, undo, repo calls, and refs: `mem:frontend/workspace-state-persistence-subtleties`.
+- Workspace transforms, modifier previews, WASM modifier integration, and transform commits: `mem:frontend/workspace-transform-subtleties`.
+- Workspace token application/propagation: `mem:frontend/workspace-token-subtleties`; shared token data/schema: `mem:common/tokens-schema-subtleties`.
 
 App shell and product flows:
-- Routing, root app shell, websocket, and global errors: `frontend/routing-app-shell-subtleties`.
-- Dashboard and viewer flows: `frontend/dashboard-viewer-subtleties`.
-- Plugin JS API runtime inside the frontend app: `frontend/plugin-api-runtime-subtleties`.
+- Routing, root app shell, websocket, and global errors: `mem:frontend/routing-app-shell-subtleties`.
+- Dashboard and viewer flows: `mem:frontend/dashboard-viewer-subtleties`.
+- Plugin JS API runtime inside the frontend app: `mem:frontend/plugin-api-runtime-subtleties`.
 
 Diagnostics and validation:
-- Runtime inspection and navigation: `frontend/cljs-repl`.
-- Source-edit compile/hot-reload diagnostics: `frontend/compile-diagnostics`.
-- Runtime crash recovery: `frontend/handling-crashes`.
-- Tests, lint, format, and live verification: `frontend/testing`.
-- Real pointer/keyboard gesture reproduction: `frontend/playwright-gestures`.
+- Runtime inspection and navigation: `mem:frontend/cljs-repl`.
+- Source-edit compile/hot-reload diagnostics: `mem:frontend/compile-diagnostics`.
+- Runtime crash recovery: `mem:frontend/handling-crashes`.
+- Tests, lint, format, and live verification: `mem:frontend/testing`.
+- Real pointer/keyboard gesture reproduction: `mem:frontend/playwright-gestures`.
 
 ## Areas without focused memories
 

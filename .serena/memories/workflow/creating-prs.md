@@ -10,7 +10,7 @@ PR titles follow commit title conventions:
 :emoji: Subject line (imperative, capitalized, no period, <=70 chars)
 ```
 
-See `workflow/creating-commits` for emoji codes. Squash merge uses the PR title as the final commit subject, so title format matters.
+See `mem:workflow/creating-commits` for emoji codes. Squash merge uses the PR title as the final commit subject, so title format matters.
 
 ## Description
 
@@ -27,6 +27,6 @@ For the Penpot MCP self-improvement workflow, PR descriptions are expected to st
 
 ## Before Opening
 
-- Follow `workflow/creating-commits` for changelog expectations.
+- Follow `mem:workflow/creating-commits` for changelog expectations.
 - Run the focused tests/lints appropriate to touched modules.
 - Do not force-push during review unless the maintainer workflow explicitly asks for it.

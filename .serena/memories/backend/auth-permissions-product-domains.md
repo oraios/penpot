@@ -1,6 +1,6 @@
 # Backend Auth, Permissions, and Product Domain Subtleties
 
-Use when changing authentication providers, profile/team/project permissions, invitations, comments, webhooks, audit logging, or management/product RPC commands. For generic RPC wrapper and DB transaction behavior, also read `backend/rpc-db-worker-subtleties`.
+Use when changing authentication providers, profile/team/project permissions, invitations, comments, webhooks, audit logging, or management/product RPC commands. For generic RPC wrapper and DB transaction behavior, also read `mem:backend/rpc-db-worker-subtleties`.
 
 ## Auth and sessions
 
@@ -11,7 +11,7 @@ Use when changing authentication providers, profile/team/project permissions, in
 - LDAP login validates credentials against the external directory, fetches identity data, then logs in or registers a matching Penpot profile. LDAP registration is not a separate Penpot signup flow.
 - Logout may return an OIDC provider redirect URI when the session claims include provider/session data and the provider has a logout URI.
 - Invitation tokens are verified through token issuers and only accepted when the token member id/email matches the authenticated profile; otherwise login proceeds without consuming the invitation.
-- HTTP/session parsing details such as cookie/header precedence, JWT session token versions, and SameSite behavior are in `backend/http-storage-filedata-subtleties`.
+- HTTP/session parsing details such as cookie/header precedence, JWT session token versions, and SameSite behavior are in `mem:backend/http-storage-filedata-subtleties`.
 
 ## Permission model
 
@@ -37,6 +37,6 @@ Use when changing authentication providers, profile/team/project permissions, in
 ## Local testing notes
 
 - Enable LDAP login locally with frontend flag `enable-login-with-ldap`; the devenv includes a configured test LDAP service.
-- OIDC testing requires external provider app credentials plus matching backend/frontend config. Check `project/dev-ci-environment-workflow` for local feature-flag mechanics.
+- OIDC testing requires external provider app credentials plus matching backend/frontend config. Check `mem:project/dev-ci-environment-workflow` for local feature-flag mechanics.
 - Backend domain tests usually live under `backend/test/backend_tests/rpc/commands/*_test.clj` or nearby backend test namespaces. Use focused `clojure -M:dev:test --focus ...` from `backend/` when possible.
-- For auth/session or HTTP behavior, combine backend tests with the HTTP/session notes in `backend/http-storage-filedata-subtleties` because RPC-level tests may not exercise cookie/header transforms.
+- For auth/session or HTTP behavior, combine backend tests with the HTTP/session notes in `mem:backend/http-storage-filedata-subtleties` because RPC-level tests may not exercise cookie/header transforms.

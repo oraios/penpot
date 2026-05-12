@@ -38,8 +38,8 @@ For shape mutations, prefer production-path helpers such as `cls/generate-update
 
 ## Geometry setup caution
 
-For geometry-sensitive tests, read `common/geometry-invariants` before positioning shapes. Use geometry-preserving helpers or production change helpers rather than direct single-field edits.
+For geometry-sensitive tests, read `mem:common/geometry-invariants` before positioning shapes. Use geometry-preserving helpers or production change helpers rather than direct single-field edits.
 
 ## Debugging
 
-Use `common/component-debugging-recipes` for shape-tree dumps, undo/change inspection, and temporary live instrumentation recipes.
+Use `mem:common/component-debugging-recipes` for shape-tree dumps, undo/change inspection, and temporary live instrumentation recipes.

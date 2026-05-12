@@ -22,6 +22,6 @@ When changing the file data model, check the relevant paths:
 
 ## Migrations
 
-Existing files should keep working unchanged when possible. If absence cannot preserve old behavior, add a migration and preserve append/order semantics described in `common/file-change-validation-migration-subtleties`.
+Existing files should keep working unchanged when possible. If absence cannot preserve old behavior, add a migration and preserve append/order semantics described in `mem:common/file-change-validation-migration-subtleties`.
 
 Model changes can also require file feature flags or migration metadata updates; check nearby migrations and `common/src/app/common/features.cljc` before inventing a new pattern.

@@ -1,6 +1,6 @@
 # File Mutations: Changes and Undo Architecture
 
-Use for `common/` work that mutates file data or needs to understand undo/redo. For validation, repair, migrations, shape-tree edits, and second-pass touched details, also read `common/file-change-validation-migration-subtleties`. For live inspection snippets, read `common/component-debugging-recipes`.
+Use for `common/` work that mutates file data or needs to understand undo/redo. For validation, repair, migrations, shape-tree edits, and second-pass touched details, also read `mem:common/file-change-validation-migration-subtleties`. For live inspection snippets, read `mem:common/component-debugging-recipes`.
 
 Penpot mutates file data through change records. A change set is both the persistence payload and the basis for undo/redo, so UI actions, tests, backend file updates, and library/file tooling should drive the production change pipeline instead of ad hoc object-map mutation.
 
@@ -34,8 +34,8 @@ The applier uses the same `process-operation` multimethod as production (`common
 
 ## :touched and geometry
 
-For component touched semantics and sync groups, read `common/component-data-model`. For the exact `set-shape-attr` / second-pass behavior during change application, read `common/file-change-validation-migration-subtleties`. For transform-specific ignore-geometry behavior, read `frontend/workspace-transform-subtleties`.
+For component touched semantics and sync groups, read `mem:common/component-data-model`. For the exact `set-shape-attr` / second-pass behavior during change application, read `mem:common/file-change-validation-migration-subtleties`. For transform-specific ignore-geometry behavior, read `mem:frontend/workspace-transform-subtleties`.
 
 ## Inspection
 
-To inspect what a UI action emitted, use `frontend/cljs-repl` with the snippets in `common/component-debugging-recipes` rather than adding temporary source instrumentation.
+To inspect what a UI action emitted, use `mem:frontend/cljs-repl` with the snippets in `mem:common/component-debugging-recipes` rather than adding temporary source instrumentation.
