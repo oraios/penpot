@@ -1,7 +1,5 @@
 # Backend HTTP, Storage, Media, and File Data Subtleties
 
-Use when changing request/session middleware, object storage/media processing, or file-data persistence.
-
 ## Config and HTTP/session middleware
 
 - `app.config/config` and `flags` are dynamic `defonce` vars populated from `PENPOT_*` env vars through the shared schema string transformer. Tests and tooling can bind them.

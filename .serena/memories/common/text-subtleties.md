@@ -1,7 +1,5 @@
 # Common Text Subtleties
 
-Use when changing shared text data conversion, DraftJS compatibility, modern text content structure, or derived text position data. For frontend text editor package workflow, read `mem:frontend/ui-packages-text-editor-workflow`.
-
 ## DraftJS compatibility
 
 - `app.common.text` is legacy DraftJS conversion support. New text work should prefer the newer text type namespaces unless specifically touching DraftJS conversion.

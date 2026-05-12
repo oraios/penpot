@@ -1,6 +1,6 @@
 # Frontend Compile Diagnostics
 
-Use this after editing CLJ/CLJC/CLJS source when hot reload fails, behavior appears stale, or the app does not reflect source changes. This is separate from runtime crash recovery in `mem:frontend/handling-crashes`.
+Separate from runtime crash recovery.
 
 ## First check the shadow-cljs build
 

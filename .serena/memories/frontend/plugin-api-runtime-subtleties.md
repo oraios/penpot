@@ -1,7 +1,5 @@
 # Frontend Plugin API Runtime Subtleties
 
-Use when changing the in-app Plugin API implementation under `frontend/src/app/plugins*`, or when debugging differences between TypeScript Plugin API declarations and real runtime behavior.
-
 ## Type declarations vs runtime
 
 - `plugins/libs/plugin-types/index.d.ts` contains TypeScript declarations only. Runtime objects are CLJS proxies built under `frontend/src/app/plugins/*.cljs` with `obj/reify`.

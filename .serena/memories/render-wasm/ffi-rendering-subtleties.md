@@ -1,7 +1,5 @@
 # render-wasm FFI and Rendering Subtleties
 
-Use when changing exported WASM functions, memory ownership, shape loading, tile invalidation, or interactive rendering.
-
 ## FFI state and errors
 
 - The renderer uses one unsafe global `STATE`; the `with_state*` macros currently panic on invalid state pointer. Treat state pointer validity as critical, not recoverable.

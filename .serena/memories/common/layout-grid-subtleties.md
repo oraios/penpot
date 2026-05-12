@@ -1,7 +1,5 @@
 # Common Layout and Grid Subtleties
 
-Use when changing common layout logic, grid layout assignment/deassignment, layout metadata cleanup, or auto-positioning behavior.
-
 ## Layout metadata
 
 - Layout container data and child layout-item data are removed by different helpers. Do not assume clearing a layout frame also clears all child layout metadata.

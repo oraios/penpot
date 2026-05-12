@@ -1,7 +1,5 @@
 # Project Agent Workflow and Module Map
 
-Start here for Penpot memory routing: repo-level workflow, module map, changelog routing, dependency cautions.
-
 ## Workflow
 
 - Identify the affected module(s), then follow the module map to the relevant subsection introductory memory instead of loading unrelated context.

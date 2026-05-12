@@ -1,7 +1,5 @@
 # Frontend Workspace State and Persistence Subtleties
 
-Use when changing workspace state, commits, persistence, undo, repo calls, or derived refs.
-
 ## Store and interaction streams
 
 - `app.main.store/state` is the Potok store; `emit!` always returns nil. Store errors flow through the mutable `on-error` atom.

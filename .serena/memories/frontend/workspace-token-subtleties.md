@@ -1,7 +1,5 @@
 # Frontend Workspace Token Subtleties
 
-Use when changing workspace token refs, token application, token propagation, or applied-token UI behavior. For shared token data model, serialization, and schema behavior, also read `mem:common/tokens-schema-subtleties`.
-
 ## Token refs and visibility
 
 - Workspace token refs intentionally hide the internal hidden theme from theme trees/lists and expose active tokens through `get-tokens-in-active-sets`.

@@ -1,7 +1,5 @@
 # File Mutations: Changes and Undo Architecture
 
-Use for `common/` work that mutates file data or needs to understand undo/redo. For validation, repair, migrations, shape-tree edits, and second-pass touched details, also read `mem:common/file-change-validation-migration-subtleties`. For live inspection snippets, read `mem:common/component-debugging-recipes`.
-
 Penpot mutates file data through change records. A change set is both the persistence payload and the basis for undo/redo, so UI actions, tests, backend file updates, and library/file tooling should drive the production change pipeline instead of ad hoc object-map mutation.
 
 ## Change shape

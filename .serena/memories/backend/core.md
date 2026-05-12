@@ -1,6 +1,6 @@
 # Backend Architecture and Workflow
 
-Backend intro: JVM Clojure; Integrant; PostgreSQL; Redis/Valkey; RPC; HTTP; storage; mail; audit/logging; workers.
+Backend: JVM Clojure; Integrant; PostgreSQL; Redis/Valkey; RPC; HTTP; storage; mail; audit/logging; workers.
 
 Focused routing: RPC/DB/workers -> `mem:backend/rpc-db-worker-subtleties`; HTTP/session/storage/media/file-data -> `mem:backend/http-storage-filedata-subtleties`; auth/permissions/product domains -> `mem:backend/auth-permissions-product-domains`.
 

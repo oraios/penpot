@@ -1,7 +1,5 @@
 # Common File Change, Validation, and Migration Subtleties
 
-Use when changing file change application, shape tree edits, validation/repair, migrations, or touched behavior. For broader model changes, also read `mem:common/data-model-change-checklist`.
-
 ## Change application
 
 - `process-changes` validates the whole change vector once by default, reduces changes, then performs a second pass for collected touched changes. Callers that already validated can pass `verify? false`.

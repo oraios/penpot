@@ -1,6 +1,6 @@
 # Geometry Invariants in Penpot Shapes
 
-Use this when changing shape geometry, transform code, or geometry-sensitive tests. Shape position is stored redundantly, and all geometry fields must stay coherent.
+Core invariant: shape position is stored redundantly, and all geometry fields must stay coherent.
 
 ## Redundant fields
 

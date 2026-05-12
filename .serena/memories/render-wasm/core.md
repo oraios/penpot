@@ -1,6 +1,6 @@
 # render-wasm Architecture and Workflow
 
-`render-wasm/` intro: Rust crate compiled to WebAssembly via Emscripten/Skia; frontend loads generated JS/WASM renderer. FFI/memory/tile behavior: `mem:render-wasm/ffi-rendering-subtleties`.
+`render-wasm/`: Rust crate compiled to WebAssembly via Emscripten/Skia; frontend loads generated JS/WASM renderer. FFI/memory/tile behavior: `mem:render-wasm/ffi-rendering-subtleties`.
 
 ## Stable Architecture
 

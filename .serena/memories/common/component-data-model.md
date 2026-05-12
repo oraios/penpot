@@ -1,7 +1,5 @@
 # Component and Variant Data Model
 
-Use before changing component instances, variants, touched override behavior, or ref-chain logic. For swap-specific behavior read `mem:common/component-swap-pipeline`; for live debugging snippets read `mem:common/component-debugging-recipes`.
-
 ## Shape roles relative to components
 
 A shape can occupy multiple roles at once:

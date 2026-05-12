@@ -1,7 +1,5 @@
 # Common Tokens and Schema Subtleties
 
-Use when changing design-token data structures, token import/export, active theme/set semantics, token serialization, or shared schema/coercion behavior. For frontend workspace application/propagation behavior, also read `mem:frontend/workspace-token-subtleties`.
-
 ## Tokens
 
 - `TokensLib` always ensures an internal hidden theme exists and defaults active themes to that hidden theme path. That hidden theme represents the UI state where active sets are controlled without modifying a user-created theme.

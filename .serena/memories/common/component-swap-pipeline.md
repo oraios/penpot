@@ -1,7 +1,5 @@
 # Component Swap and Variant Switch Pipeline
 
-Use when changing component swaps, variant switching, or keep-touched behavior. For live tracing snippets, read `mem:common/component-debugging-recipes`.
-
 ## Entry points
 
 Frontend entry points under `frontend/src/app/main/data/workspace/`:

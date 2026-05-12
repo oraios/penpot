@@ -1,7 +1,5 @@
 # Backend Auth, Permissions, and Product Domain Subtleties
 
-Use when changing authentication providers, profile/team/project permissions, invitations, comments, webhooks, audit logging, or management/product RPC commands. For generic RPC wrapper and DB transaction behavior, also read `mem:backend/rpc-db-worker-subtleties`.
-
 ## Auth and sessions
 
 - Main auth RPC commands live in `app.rpc.commands.auth`; LDAP and OIDC provider logic live in `app.auth.ldap` and `app.auth.oidc`, with LDAP-specific RPC checks in `app.rpc.commands.ldap`.

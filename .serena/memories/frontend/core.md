@@ -1,6 +1,6 @@
 # Frontend Architecture and Workflow
 
-Frontend intro: CLJS SPA; React/Rumext; Potok; RxJS; okulary refs; SCSS modules; shared `common/`; JS/TS workspace packages.
+Frontend: CLJS SPA; React/Rumext; Potok; RxJS; okulary refs; SCSS modules; shared `common/`; JS/TS workspace packages.
 
 ## Stable namespace map
 

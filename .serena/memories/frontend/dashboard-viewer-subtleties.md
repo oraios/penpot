@@ -1,7 +1,5 @@
 # Frontend Dashboard and Viewer Subtleties
 
-Use when changing dashboard data flows, project/file summaries, viewer initialization, shared/view-only bundles, or viewer route/query behavior. For generic routing/websocket behavior, read `mem:frontend/routing-app-shell-subtleties`.
-
 ## Dashboard
 
 - Dashboard initialization fetches projects and fonts for the team, then listens to websocket messages only for global topic `uuid/zero` or the current profile id.

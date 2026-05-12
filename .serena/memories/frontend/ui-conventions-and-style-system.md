@@ -1,7 +1,5 @@
 # Frontend UI Conventions and Style System
 
-Use when changing app UI components, SCSS modules, shared UI primitives, design-system components, or Storybook-facing UI behavior.
-
 ## CLJS app UI
 
 - Main app components live under `frontend/src/app/main/ui*` and normally use Rumext `mf/defc` with a `*` suffix for component vars and `[:> component* props]` call sites.

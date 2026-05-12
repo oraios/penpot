@@ -1,7 +1,5 @@
 # Common Data Model Change Checklist
 
-Use when adding or changing file/page/shape/component attributes or behavior that affects persisted Penpot files, SVG import/export, inspector output, or generated code.
-
 ## Attribute conventions
 
 - Prefer optional page/shape attrs with default behavior when absent. Reverting to default should usually remove the attr instead of storing nil.

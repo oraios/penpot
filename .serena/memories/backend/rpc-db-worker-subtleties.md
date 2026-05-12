@@ -1,7 +1,5 @@
 # Backend RPC/DB/Worker Subtleties
 
-Use when changing RPC commands, DB transaction behavior, task workers, or cron jobs.
-
 ## RPC exposure and wrappers
 
 - RPC commands are discovered from vars created by `app.util.services/defmethod`; adding a command namespace is not enough unless `backend/src/app/rpc.clj` includes it in `resolve-methods`.

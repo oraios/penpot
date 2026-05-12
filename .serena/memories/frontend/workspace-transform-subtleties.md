@@ -1,7 +1,5 @@
 # Frontend Workspace Transform Subtleties
 
-Use when changing workspace transforms, modifier previews, WASM modifier integration, or transform commits.
-
 ## Preview vs committed transforms
 
 - High-frequency previews use `app.main.streams/wasm-modifiers` and `workspace-selrect` behavior subjects instead of normal store commits; components consume them through refs that wrap plain atoms.

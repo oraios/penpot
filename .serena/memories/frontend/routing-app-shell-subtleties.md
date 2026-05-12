@@ -1,7 +1,5 @@
 # Frontend Routing, App Shell, Websocket, and Error Subtleties
 
-Use when changing app startup/routing, root app shell, websocket initialization, global error behavior, or route/query handling.
-
 ## Router, app shell, and errors
 
 - Routing uses browser-history hash tokens, but `on-navigate` rejects navigation if the current origin/path does not match `cf/public-uri`.
