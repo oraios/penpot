@@ -5,7 +5,11 @@
 - `plugins/libs/plugin-types/index.d.ts` contains TypeScript declarations only. Runtime objects are CLJS proxies built under `frontend/src/app/plugins/*.cljs` with `obj/reify`.
 - `shape.cljs` builds shape proxies with hidden ids and per-property CLJS implementations. `library.cljs` builds library proxies such as `LibraryComponentProxy`.
 - `shape.cljs`, `library.cljs`, and related namespaces break circular dependencies with mutable nil vars patched from `app.plugins` at load time. If a proxy constructor appears nil, check the patching path in `frontend/src/app/plugins.cljs`.
-- Useful domain namespaces: `app.common.types.component` for component predicates, `app.common.types.container` for tree/head/root operations, and `app.common.types.file` for resolving components/ref shapes.
+
+## Key Domain Namespaces
+- `app.common.types.component` (aliased `ctk`) — component predicates: `instance-root?`, `instance-head?`, `in-component-copy?`, `is-variant?`
+- `app.common.types.container` (aliased `ctn`) — container/tree operations: `in-any-component?`, `get-instance-root`, `get-head-shape`, `inside-component-main?`
+- `app.common.types.file` (aliased `ctf`) — file-level operations: `resolve-component`, `get-ref-shape`
 
 ## Runtime initialization and permissions
 

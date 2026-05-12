@@ -1,7 +1,5 @@
 # Frontend Runtime Crash Handling
 
-Before runtime-crash debugging: verify source build health.
-
 ## Detect a runtime workspace crash
 
 Runtime crashes usually show the Internal Error page with title text "Something bad happened" and class `main_ui_static__download-link`. A common pattern is: changes go through via JS API / `execute_code`, then 1-2s later an `update-file` request reaches the backend and is rejected.
