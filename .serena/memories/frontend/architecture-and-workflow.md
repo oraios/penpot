@@ -1,6 +1,6 @@
 # Frontend Architecture and Workflow
 
-Use this as the frontend introductory memory. The frontend is a ClojureScript SPA using React/Rumext components, Potok events, RxJS streams, okulary refs, SCSS modules, shared CLJC code from `common/`, and several JS/TS workspace packages.
+Frontend intro: CLJS SPA; React/Rumext; Potok; RxJS; okulary refs; SCSS modules; shared `common/`; JS/TS workspace packages.
 
 ## Stable namespace map
 
@@ -11,7 +11,7 @@ Use this as the frontend introductory memory. The frontend is a ClojureScript SP
 - `app.plugins.*` and `app.plugins`: CLJS implementation of Plugin JS API proxies.
 - `app.render_wasm.*`: frontend bridge to Rust/WASM renderer.
 - `app.util.*`: DOM, HTTP, i18n, keyboard, codegen, and general frontend utilities.
-- `frontend/packages/*` and `frontend/text-editor`: JS/TS workspace packages consumed by the app; read `frontend/ui-packages-text-editor-workflow` before changing them.
+- `frontend/packages/*` and `frontend/text-editor`: JS/TS workspace packages consumed by the app.
 - Nitrate subscription/organization UI and flows live under `app.main.data.nitrate` and `app.main.ui.nitrate*`; backend/API behavior is covered by backend memories, and shared permission rules are in `common/src/app/common/types/nitrate_permissions.cljc`.
 
 ## Focused memory routing
@@ -23,7 +23,7 @@ UI and packages:
 Workspace behavior:
 - Workspace state, commits, persistence, undo, repo calls, and refs: `frontend/workspace-state-persistence-subtleties`.
 - Workspace transforms, modifier previews, WASM modifier integration, and transform commits: `frontend/workspace-transform-subtleties`.
-- Workspace token application/propagation: `frontend/workspace-token-subtleties`; for shared token data/schema behavior also read `common/tokens-schema-subtleties`.
+- Workspace token application/propagation: `frontend/workspace-token-subtleties`; shared token data/schema: `common/tokens-schema-subtleties`.
 
 App shell and product flows:
 - Routing, root app shell, websocket, and global errors: `frontend/routing-app-shell-subtleties`.

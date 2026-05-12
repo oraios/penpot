@@ -1,6 +1,6 @@
 # Creating Pull Requests
 
-Create a PR only when explicitly asked. First ensure the branch is specific to the issue or feature. If necessary, create a branch named like `<type>/<short-description>` (`fix/...`, `feat/...`, `refactor/...`, `docs/...`, `chore/...`, `perf/...`).
+PR only on explicit request. Branch: issue/feature-specific; fallback `<type>/<short-description>` (`fix/...`, `feat/...`, `refactor/...`, `docs/...`, `chore/...`, `perf/...`).
 
 ## Title Format
 

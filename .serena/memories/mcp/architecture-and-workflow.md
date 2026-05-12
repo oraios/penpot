@@ -1,6 +1,6 @@
 # MCP Architecture and Workflow
 
-`mcp/` is a TypeScript/pnpm workspace for Penpot's Model Context Protocol integration. It contains the MCP server exposed to AI clients and the Penpot plugin that connects a design file to that server.
+`mcp/`: TypeScript/pnpm workspace for MCP integration. Contains AI-facing MCP server plus Penpot plugin bridge for design files.
 
 ## Layout and commands
 

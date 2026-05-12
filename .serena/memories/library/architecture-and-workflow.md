@@ -1,6 +1,6 @@
 # Library Architecture and Workflow
 
-`library/` builds `@penpot/library`, a JavaScript-facing package for programmatically constructing Penpot files in memory and exporting them as `.penpot` ZIP archives. It is separate from the main app runtime.
+`library/`: builds `@penpot/library`; JS-facing in-memory Penpot file builder and `.penpot` ZIP exporter. Separate from main app runtime.
 
 ## Layout and commands
 

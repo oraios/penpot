@@ -1,6 +1,6 @@
 # Docs Workflow
 
-`docs/` is the Penpot documentation website built with Eleventy.
+`docs/`: Penpot documentation site; Eleventy.
 
 ## Layout and Tooling
 

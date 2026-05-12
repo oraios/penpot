@@ -1,6 +1,6 @@
 # Frontend Testing and Live Verification
 
-Use for frontend validation. Frontend code is ClojureScript + React/Rumext + RxJS/Potok state, with SCSS modules and shared CLJC dependencies from `common/`.
+Frontend validation: CLJS + React/Rumext + RxJS/Potok; SCSS modules; shared CLJC from `common/`.
 
 ## Unit tests
 

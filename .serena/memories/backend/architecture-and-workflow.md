@@ -1,8 +1,8 @@
 # Backend Architecture and Workflow
 
-Use this as the backend introductory memory. The backend is JVM Clojure using Integrant components, PostgreSQL, Redis/Valkey, RPC commands, HTTP routes, storage, mail, audit/logging, and background workers.
+Backend intro: JVM Clojure; Integrant; PostgreSQL; Redis/Valkey; RPC; HTTP; storage; mail; audit/logging; workers.
 
-For stable non-obvious RPC/DB/worker behavior, read `backend/rpc-db-worker-subtleties`. For HTTP/session, storage/media, and file-data backend behavior, read `backend/http-storage-filedata-subtleties`. For auth, permissions, teams/projects, invitations, comments, webhooks, or audit/product-domain commands, read `backend/auth-permissions-product-domains`.
+Focused routing: RPC/DB/workers -> `backend/rpc-db-worker-subtleties`; HTTP/session/storage/media/file-data -> `backend/http-storage-filedata-subtleties`; auth/permissions/product domains -> `backend/auth-permissions-product-domains`.
 
 ## Stable namespace map
 

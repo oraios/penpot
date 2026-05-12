@@ -1,6 +1,6 @@
 # Project Dev, Docker, and CI Environment Workflow
 
-Use when changing setup scripts, Docker/devenv files, root tooling, CI workflows, feature-flag setup, or cross-module validation. For module-specific commands, prefer the relevant module memories.
+Setup scripts, Docker/devenv, root tooling, CI workflows, feature flags, cross-module validation. Module commands live in module memories.
 
 ## Root tooling
 

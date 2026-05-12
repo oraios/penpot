@@ -1,6 +1,6 @@
 # Exporter Architecture and Workflow
 
-`exporter/` is a ClojureScript/Node service for headless export workflows. It depends on `common/` and uses Playwright plus export-specific JS/CLJS dependencies to render/export assets such as SVG/PDF.
+`exporter/`: CLJS/Node headless export service. Depends on `common/`; uses Playwright plus export JS/CLJS deps for SVG/PDF/assets.
 
 ## Layout and commands
 

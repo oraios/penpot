@@ -1,6 +1,6 @@
 # Common Architecture and Workflow
 
-Use this as the `common/` introductory memory. The module is shared CLJC used by frontend, backend, exporter, library/file tooling, and some tests; small behavior changes can affect multiple runtimes.
+`common/` intro: shared CLJC for frontend, backend, exporter, library/file tooling, tests. Small semantic changes can affect multiple runtimes.
 
 ## Stable namespace map
 

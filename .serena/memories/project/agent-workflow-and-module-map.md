@@ -1,13 +1,14 @@
 # Project Agent Workflow and Module Map
 
-Use this when starting a Penpot task from the memory list. It consolidates repository-level agent guidance and routes you to subsection introductory memories.
+Start here for Penpot memory routing: repo-level workflow, module map, changelog routing, dependency cautions.
 
 ## Working flow
 
 - Identify the affected module(s), then follow the module map to the relevant subsection introductory memory instead of loading unrelated context.
-- Commit only when explicitly asked. For commit/PR format and changelog expectations, read `workflow/creating-commits` and `workflow/creating-prs`.
-- For Docker/devenv, CI workflows, root tooling, or cross-module validation, read `project/dev-ci-environment-workflow`.
-- For GitHub collaborator/PR metadata queries, read `workflow/github-queries`.
+- Commit only when explicitly asked. Commit/PR format + changelog: `workflow/creating-commits`, `workflow/creating-prs`.
+- Docker/devenv, CI, root tooling, cross-module validation: `project/dev-ci-environment-workflow`.
+- GitHub collaborator/PR metadata: `workflow/github-queries`.
+- Memory edits/stale refs/duplication cleanup: `project/memory-maintenance`.
 
 ## Stable module map
 

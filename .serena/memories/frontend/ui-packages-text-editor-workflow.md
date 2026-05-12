@@ -1,6 +1,6 @@
 # Frontend UI Packages and Text Editor Workflow
 
-Use when touching JS/TS packages under `frontend/packages/`, the standalone text editor under `frontend/text-editor/`, or Storybook/component-test behavior. This is separate from the main CLJS app UI under `frontend/src/app/main/ui`.
+`frontend/packages/`, `frontend/text-editor/`, Storybook/component tests. Separate from CLJS app UI under `frontend/src/app/main/ui`.
 
 ## Package boundaries
 

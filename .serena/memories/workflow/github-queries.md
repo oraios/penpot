@@ -1,6 +1,6 @@
 # GitHub Query Workflow
 
-Use when an agent needs repository-level GitHub metadata such as collaborators, PR authors, or review triage inputs. For commit and PR content conventions, read `workflow/creating-commits` and `workflow/creating-prs`.
+Repository GitHub metadata: collaborators, PR authors, review triage inputs. Commit/PR content conventions live in workflow memories.
 
 ## Collaborators and PR authors
 
@@ -21,5 +21,5 @@ Compare each PR author login against the collaborator list. Prefer JSON/JQ proce
 ## Safety notes
 
 - Do not create commits, branches, labels, comments, or PRs unless the user explicitly asks.
-- For PR creation/update rules, read `workflow/creating-prs` first.
-- For commit format and DCO signoff, read `workflow/creating-commits` first.
+- PR creation/update rules: `workflow/creating-prs` first.
+- Commit format/DCO signoff: `workflow/creating-commits` first.

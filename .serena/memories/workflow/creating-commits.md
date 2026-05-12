@@ -1,6 +1,6 @@
 # Creating Commits
 
-Commit only when explicitly asked. Before committing, check `git status` and do not include unrelated user changes.
+Commit only on explicit request. Before commit: `git status`; exclude unrelated user changes.
 
 ## Message Format
 
@@ -32,4 +32,4 @@ Entry format uses the matching category (`:sparkles:`, `:bug:`, etc.) and refere
 - Description of change [Taiga #NNNN](https://tree.taiga.io/project/penpot/us/NNNN)
 ```
 
-Plugin API changes need extra care: type/signature changes should be prefixed `**plugin-types:**`; runtime behavior changes should be prefixed `**plugin-runtime:**` in `plugins/CHANGELOG.md`.
+Plugin API changelog prefixes: type/signature -> `**plugin-types:**`; runtime behavior -> `**plugin-runtime:**` in `plugins/CHANGELOG.md`.
