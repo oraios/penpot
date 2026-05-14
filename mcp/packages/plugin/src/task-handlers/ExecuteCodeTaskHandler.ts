@@ -248,7 +248,14 @@ export class ExecuteCodeTaskHandler extends TaskHandler<ExecuteCodeTaskParams> {
             result: result,
             log: this.context.console.getLog(),
         };
-        task.sendSuccess(resultData);
+
+        // apply serialization and deserialization, because it may not be possible to serialize
+        // certain values outside the plugin context
+        // (This guards against the serialization failing in main.ts when the data actually gets
+        // sent back to the MCP server over the WebSocket.)
+        const serializableResultData = JSON.parse(JSON.stringify(resultData));
+
+        task.sendSuccess(serializableResultData);
     }
 
     /**
