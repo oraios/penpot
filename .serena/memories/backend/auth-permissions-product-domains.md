@@ -35,6 +35,6 @@
 ## Local testing notes
 
 - Enable LDAP login locally with frontend flag `enable-login-with-ldap`; the devenv includes a configured test LDAP service.
-- OIDC testing requires external provider app credentials plus matching backend/frontend config. Check `mem:project/dev-ci-environment-workflow` for local feature-flag mechanics.
+- OIDC testing requires external provider app credentials plus matching backend/frontend config.
 - Backend domain tests usually live under `backend/test/backend_tests/rpc/commands/*_test.clj` or nearby backend test namespaces. Use focused `clojure -M:dev:test --focus ...` from `backend/` when possible.
 - For auth/session or HTTP behavior, combine backend tests with the HTTP/session notes in `mem:backend/http-storage-filedata-subtleties` because RPC-level tests may not exercise cookie/header transforms.

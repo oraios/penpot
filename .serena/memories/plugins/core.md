@@ -10,7 +10,7 @@
 - `apps/*-plugin`: sample/development plugins. `apps/e2e`: plugin e2e tests.
 - From `plugins/`: install `pnpm -r install`; runtime dev server `pnpm run start` or `pnpm run start:app:runtime`; sample plugin `pnpm run start:plugin:<name>`; build runtime `pnpm run build:runtime`; build plugins `pnpm run build:plugins`; lint `pnpm run lint`; format `pnpm run format:check` / `pnpm run format`; tests `pnpm run test`; e2e `pnpm run test:e2e`.
 - If a change affects public Plugin API types or runtime, update `plugins/CHANGELOG.md`. Prefix type/signature entries with `**plugin-types:**`; runtime behavior entries with `**plugin-runtime:**`.
-- JS Plugin API behavior inside Penpot app: `mem:frontend/plugin-api-runtime-subtleties`; TS declarations are not runtime code; many API objects are CLJS proxies in `frontend/src/app/plugins/*.cljs`.
+- JS Plugin API behavior inside Penpot app: `mem:frontend/plugin-api-to-cljs-binding`; TS declarations are not runtime code; many API objects are CLJS proxies in `frontend/src/app/plugins/*.cljs`.
 
 ## Sandbox and global cleanup
 

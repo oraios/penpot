@@ -5,7 +5,7 @@ You are working on the GitHub project `penpot/penpot`, a monorepo.
 - Memories are the primary project guidance (not docs or other readme files).
 - A section's top-level memory is `<section>/core`. When a section is relevant, read the core memory
    before focused memories.
-- Edits/stale refs/duplication cleanup: `mem:project/memory-maintenance`.
+- Edits/stale refs/duplication cleanup: `mem:memory-maintenance`.
 
 # Development workflow
 
