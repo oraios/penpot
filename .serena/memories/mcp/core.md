@@ -1,43 +1,87 @@
-# MCP Architecture and Workflow
+# Penpot MCP
 
-`mcp/`: TypeScript/pnpm workspace for MCP integration. Contains AI-facing MCP server plus Penpot plugin bridge for design files.
+This subproject provides an MCP server for Penpot integration.
+The MCP server communicates with a Penpot plugin via WebSockets, allowing
+the MCP server to send tasks to the plugin and receive results,
+enabling advanced AI-driven features in Penpot.
 
-## Layout and commands
+## Tech Stack
 
-- `packages/common`: shared request/response and task types.
-- `packages/server`: MCP server, tool definitions, HTTP/SSE endpoints, WebSocket plugin connection, task correlation/timeouts.
-- `packages/plugin`: Penpot MCP plugin that connects to the server over WebSocket and executes tasks inside the Penpot Plugin API context.
-- `types-generator`: development tooling for API type data used by the server.
-- From `mcp/`: setup `./scripts/setup`; build `pnpm run build`; bootstrap from source `pnpm run bootstrap`; start `pnpm run start`; multi-user variants `pnpm run build:multi-user`, `pnpm run start:multi-user`, `pnpm run bootstrap:multi-user`; format `pnpm run fmt` / `pnpm run fmt:check`; generate API type data `pnpm run build:types`.
-- Default local endpoints: MCP HTTP `http://localhost:4401/mcp`, legacy SSE `http://localhost:4401/sse`, plugin manifest usually `http://localhost:4400/manifest.json`, plugin WebSocket port usually `4402`.
-- The MCP plugin UI must stay open while using the server; closing it closes the design-file connection. If changing tool/task protocol, update server, plugin, and shared types.
-- There is an older nested `.serena` project under `mcp/.serena`; do not assume its commands/paths are current without checking `mcp/package.json` and package READMEs.
+- Language: TypeScript
+- Runtime: Node.js
+- Framework: MCP SDK (@modelcontextprotocol/sdk)
+- Build Tool: TypeScript Compiler (tsc) + esbuild
+- Package Manager: pnpm
 
-## Tool availability
+## General Principles
 
-- Core tools are always registered: `execute_code`, `high_level_overview`, `penpot_api_info`, and `export_shape`.
-- `import_image` requires filesystem-enabled local mode; remote/multi-user mode disables it.
-- Dev tools require `PENPOT_MCP_DEVENV=true`: `cljs_repl`, `import_penpot_file`, `cljs_compiler_output`, and `clj_check_parentheses`.
-- Multi-user mode or `PENPOT_MCP_REMOTE_MODE=true` forces remote mode.
+IMPORTANT: Use an idiomatic, object-oriented style.
+In particular, this implies that, for any non-trivial interfaces, you use interfaces that expect explicitly typed abstractions
+rather than mere functions (i.e. use the strategy pattern, for example).
 
-## Server sessions and plugin bridge
+Comments:
+When describing parameters, methods/functions and classes, you use a precise style, where the initial (elliptical) phrase
+clearly defines *what* it is. Any details then follow in subsequent sentences.
 
-- Streamable HTTP `/mcp` creates one `McpServer` per session and stores query `userToken` in session state. Later requests use that session token through AsyncLocalStorage.
-- Legacy SSE stores user tokens per SSE session; `/messages` runs in that token context.
-- Streamable sessions time out after about 60 minutes idle, checked about every 30 minutes.
-- In multi-user mode, plugin WebSocket connections require `?userToken=...`; duplicate token connections are rejected. In single-user mode, tools require exactly one connected plugin instance.
-- Task timeout defaults to about 30 seconds. Pending tasks are registered before sending and removed if the socket is not open; responses for unknown task IDs are logged and ignored.
+When describing what blocks of code do, you also use an elliptical style and start with a lower-case letter unless
+the comment is a lengthy explanation with at least two sentences (in which case you start with a capital letter, as is
+required for sentences).
 
-## Tool execution semantics
+## Project Structure (Excerpt)
 
-- Base `Tool.execute` catches errors and returns a text result like `Tool execution failed: ...`; callers should not assume MCP protocol errors are thrown.
-- Tool arguments are logged, with multiline strings indented. Avoid sending secrets through tool args.
-- `execute_code` sends a plugin task and returns JSON for plugin task data (`result` plus captured `log`) when data exists; a code body with no return value reports success with no return value.
+```
+mcp/
+├── packages/common/           # Shared type definitions
+│   ├── src/
+│   │   ├── index.ts           # exports for shared types
+│   │   └── types.ts           # PluginTaskResult, request/response interfaces
+│   └── package.json           # @penpot-mcp/common package
+├── packages/server/           # MCP server subproject
+│   ├── src/
+│   │   ├── index.ts           # entry point
+│   │   ├── PenpotMcpServer.ts # MCP server implementation (connection handling, tool registration, etc.)
+│   │   ├── Tool.ts            # base class for tools
+│   │   ├── PluginTask.ts      # base class for plugin tasks
+│   │   ├── tasks/             # PluginTask implementations
+│   │   └── tools/             # Tool implementations
+|   ├── data/                  # contains resources, such as API info and prompts
+│   └── package.json           
+├── packages/plugin/           # Penpot plugin subproject
+│   ├── src/
+│   │   ├── main.ts            # handles communication
+│   │   └── plugin.ts          # plugin implementation
+│   └── package.json           # Includes @penpot-mcp/common dependency
+└── prepare-api-docs           # Python project for the generation of API docs
+```
 
-## Plugin-side execution
+## Key Development Tasks
 
-- The plugin keeps a persistent JS execution context while the plugin UI/session lives: `penpot`, `penpotUtils`, `storage`, and captured `console`. `storage` is not durable across plugin disconnects, UI close, or crashes.
-- Code runs as the body of an async function, so `return` and top-level `await` inside that body work.
-- The handler temporarily enables `penpot.flags.naturalChildOrdering` and `penpot.flags.throwValidationErrors`, restoring flags in `finally`. Missing flags indicate an incompatible Penpot version.
-- Captured console stringifies object args with JSON, and `console.clear` intentionally no-ops.
-- The plugin version check allows local Penpot version `0.0.0`; other mismatches are surfaced in the plugin UI.
+### Adjusting the Prompts
+
+The system prompt file (aka Penpot High-Level Overview) is located in 
+`packages/server/data/initial_instructions.md`.
+
+### Adding a new Tool
+
+1. Implement the tool class in `packages/server/src/tools/` following the `Tool` interface.
+   IMPORTANT: Do not catch any exceptions in the `executeCore` method. Let them propagate to be handled centrally.
+2. Register the tool in `PenpotMcpServer`.
+
+Tools can be associated with a `PluginTask` that is executed in the plugin.
+Many tools build on `ExecuteCodePluginTask`, as many operations can be reduced to code execution.
+
+### Adding a new PluginTask
+
+1. Implement the input data interface for the task in `packages/common/src/types.ts`.
+2. Implement the `PluginTask` class in `packages/server/src/tasks/`.
+3. Implement the corresponding task handler class in the plugin (`packages/plugin/src/task-handlers/`).
+    * In the success case, call `task.sendSuccess`.
+    * In the failure case, just throw an exception, which will be handled centrally!
+4. Register the task handler in `packages/plugin/src/plugin.ts` in the `taskHandlers` list.
+
+## Dev Tooling
+
+From the `mcp/` directory, run
+
+* `pnpm run build` to test the build of all package
+* `pnpm run fmt` to apply the auto-formatter
