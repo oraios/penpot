@@ -66,6 +66,8 @@ export function assertPluginResponsive(
  * over these connections.
  */
 export class PluginBridge {
+    public static readonly MULTIUSER_CONNECTION_ERROR_MESSAGE = `No Penpot instance connected for user token. Please ensure that Penpot is connected and that the MCP client connection is using the correct token.`;
+
     private readonly logger = createLogger("PluginBridge");
     private readonly wsServer: WebSocketServer;
     private readonly connectedClients: Map<WebSocket, ClientConnection> = new Map();
@@ -272,7 +274,7 @@ export class PluginBridge {
             const connection = this.clientsByToken.get(sessionContext.userToken);
             if (!connection) {
                 throw new Error(
-                    `No plugin instance connected for user token. Please ensure the plugin is running and connected with the correct token.`
+                    PluginBridge.MULTIUSER_CONNECTION_ERROR_MESSAGE
                 );
             }
 
