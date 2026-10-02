@@ -17,14 +17,17 @@ export function setContextBuilder(builder: ContextBuilder) {
 export const getPlugins = () => plugins;
 
 const closeAllPlugins = () => {
-  plugins.forEach((pluginApi) => {
+  plugins = plugins.filter((pluginApi) => {
     /* eslint-disable  @typescript-eslint/no-explicit-any */
-    if (!(pluginApi.manifest as any)?.allowBackground) {
-      pluginApi.plugin.close();
+    if (
+      pluginApi.manifest?.scope === 'global' ||
+      (pluginApi.manifest as any)?.allowBackground
+    ) {
+      return true;
     }
+    pluginApi.plugin.close();
+    return false;
   });
-
-  plugins = [];
 };
 
 window.addEventListener('message', (event) => {
@@ -51,7 +54,17 @@ export const loadPlugin = async function (
       return;
     }
 
-    closeAllPlugins();
+    if (manifest.scope === 'global') {
+      if (
+        plugins.some(
+          (plugin) => plugin.manifest?.pluginId === manifest.pluginId,
+        )
+      ) {
+        return;
+      }
+    } else {
+      closeAllPlugins();
+    }
 
     // The host context is not deeply frozen at this load stage.
     //
@@ -68,7 +81,8 @@ export const loadPlugin = async function (
     // `createSandbox`'s proxy handler applies `ses.safeReturn` to values
     // crossing into the sandbox. Compartment isolation and intrinsics
     // hardening are performed by createSandbox, not here.
-    const plugin = await createPlugin(
+    let plugin: Awaited<ReturnType<typeof createPlugin>> | undefined = undefined;
+    plugin = await createPlugin(
       context,
       manifest,
       () => {
@@ -82,7 +96,7 @@ export const loadPlugin = async function (
     );
     plugins.push(plugin);
   } catch (error) {
-    closeAllPlugins();
+    if (manifest.scope !== 'global') closeAllPlugins();
     throw error;
   }
 };
