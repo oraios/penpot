@@ -4,7 +4,7 @@
  */
 export interface Penpot extends Omit<
   Context,
-  'addListener' | 'removeListener'
+  'addListener' | 'removeListener' | 'management'
 > {
   readonly ui: {
     /**
@@ -778,10 +778,99 @@ export interface CommonLayout {
   remove(): void;
 }
 
+/** Current workspace of this browser tab. */
+export interface WorkspaceContext {
+  readonly status: 'none' | 'loading' | 'ready';
+  readonly fileId: string | null;
+  readonly fileName: string | null;
+  readonly teamId: string | null;
+}
+
+/** Metadata snapshot of an accessible, non-deleted project. */
+export interface ProjectSummary {
+  readonly id: string;
+  readonly teamId: string;
+  readonly name: string;
+  /** Whether this is the team's Drafts project. */
+  readonly isDefault: boolean;
+  readonly fileCount: number;
+}
+
+/** Metadata snapshot of an accessible, non-deleted file. */
+export interface FileSummary {
+  readonly id: string;
+  readonly teamId: string;
+  readonly projectId: string;
+  readonly name: string;
+  /** Last modification time as an ISO 8601 string in UTC. */
+  readonly modifiedAt: string;
+}
+
+/**
+ * Application management API exposed as `penpotMgmt` to global plugins.
+ *
+ * - Requires `content:read` permission.
+ * - Available in the dashboard and file workspaces.
+ * - Use this API to discover and open files; file operations on `penpot` require a ready workspace.
+ * - Reacquire file, page and shape objects after changing files.
+ */
+export interface PenpotMgmt {
+  /** Current workspace availability and metadata; usable for file operations when status is `ready`. */
+  readonly workspace: WorkspaceContext;
+  /**
+   * Lists accessible, non-deleted projects as metadata snapshots.
+   *
+   * - `teamId` defaults to the current team.
+   * - Queries the backend without opening a file or changing navigation.
+   * - Rejects invalid identifiers and backend access errors.
+   *
+   * @example
+   * ```ts
+   * const projects = await penpotMgmt.listProjects();
+   * ```
+   */
+  listProjects(options?: { teamId?: string }): Promise<ProjectSummary[]>;
+  /**
+   * Lists accessible, non-deleted files in the specified project as metadata snapshots.
+   *
+   * - Requires an explicit `projectId`.
+   * - Queries the backend without opening a file or changing navigation.
+   * - Rejects invalid identifiers and backend access errors.
+   *
+   * @example
+   * ```ts
+   * const files = await penpotMgmt.listFiles({ projectId: project.id });
+   * ```
+   */
+  listFiles(options: { projectId: string }): Promise<FileSummary[]>;
+  /**
+   * Opens a file in this tab and resolves once its workspace and page are ready.
+   *
+   * - `teamId` defaults to the current team.
+   * - Rejects invalid identifiers, failed or superseded navigation, and waits exceeding 30 seconds.
+   *
+   * @example
+   * ```ts
+   * await penpotMgmt.openFile(file.id, { teamId: file.teamId });
+   * ```
+   */
+  openFile(fileId: string, options?: { teamId?: string }): Promise<void>;
+  /** Subscribes to workspace availability and metadata changes. */
+  on(
+    type: 'workspacechange',
+    callback: (workspace: WorkspaceContext) => void,
+  ): symbol;
+  off(listenerId: symbol): void;
+}
+
 /**
  * Represents the context of Penpot, providing access to various Penpot functionalities and data.
  */
 export interface Context {
+  readonly management?: Pick<
+    PenpotMgmt,
+    'workspace' | 'openFile' | 'listProjects' | 'listFiles'
+  >;
   /**
    * Returns the current penpot version.
    */
@@ -1556,6 +1645,8 @@ export interface Ellipse extends ShapeBase {
  * ```
  */
 export interface EventsMap {
+  readonly workspacechange: WorkspaceContext;
+  readonly logout: void;
   /**
    * The `pagechange` event is triggered when the active page in the project is changed.
    */
@@ -5757,4 +5848,5 @@ export interface Viewport {
 
 declare global {
   const penpot: Penpot;
+  const penpotMgmt: PenpotMgmt;
 }
