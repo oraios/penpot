@@ -12,6 +12,9 @@
    [frontend-tests.data.dashboard-test]
    [frontend-tests.data.event-test]
    [frontend-tests.data.exports-assets-test]
+   [frontend-tests.data.exports-files-test]
+   [frontend-tests.data.imports-test]
+   [frontend-tests.data.jobs-test]
    [frontend-tests.data.nitrate-test]
    [frontend-tests.data.persistence-retry-test]
    [frontend-tests.data.persistence-test]
@@ -70,6 +73,7 @@
    [frontend-tests.plugins.interactions-test]
    [frontend-tests.plugins.library-test]
    [frontend-tests.plugins.local-storage-test]
+   [frontend-tests.plugins.management-test]
    [frontend-tests.plugins.page-active-validation-test]
    [frontend-tests.plugins.page-test]
    [frontend-tests.plugins.parser-test]
@@ -85,6 +89,7 @@
    [frontend-tests.render-wasm.serialization-test]
    [frontend-tests.render-wasm.text-editor-apply-styles-test]
    [frontend-tests.render-wasm.text-editor-caret-color-test]
+   [frontend-tests.render-wasm.text-paste-test]
    [frontend-tests.router-test]
    [frontend-tests.svg-fills-test]
    [frontend-tests.svg-filters-test]
@@ -96,6 +101,7 @@
    [frontend-tests.tokens.logic.token-data-test]
    [frontend-tests.tokens.logic.token-remapping-test]
    [frontend-tests.tokens.logic.tokens-status-test]
+   [frontend-tests.tokens.referenced-token-value-test]
    [frontend-tests.tokens.style-dictionary-test]
    [frontend-tests.tokens.token-errors-test]
    [frontend-tests.tokens.workspace-tokens-remap-test]
@@ -108,7 +114,11 @@
    [frontend-tests.ui.ds-controls-numeric-input-test]
    [frontend-tests.ui.gradient-handlers-test]
    [frontend-tests.ui.history-test]
+   [frontend-tests.ui.inspect-geometry-test]
+   [frontend-tests.ui.inspect-stroke-tokens-test]
+   [frontend-tests.ui.jobs-progress-test]
    [frontend-tests.ui.layout-container-multiple-test]
+   [frontend-tests.ui.measurements-test]
    [frontend-tests.ui.measures-menu-props-test]
    [frontend-tests.ui.organization-team-switch-test]
    [frontend-tests.ui.routes-test]
@@ -123,6 +133,7 @@
    [frontend-tests.util-queue-test]
    [frontend-tests.util-range-tree-test]
    [frontend-tests.util-simple-math-test]
+   [frontend-tests.util-text-clipboard-test]
    [frontend-tests.util-text-editor-test]
    [frontend-tests.util-webapi-test]
    [frontend-tests.util-zip-test]
@@ -156,6 +167,9 @@
    'frontend-tests.data.repo-test
    'frontend-tests.data.store-test
    'frontend-tests.data.exports-assets-test
+   'frontend-tests.data.exports-files-test
+   'frontend-tests.data.imports-test
+   'frontend-tests.data.jobs-test
    'frontend-tests.data.svg-upload-test
    'frontend-tests.data.uploads-test
    'frontend-tests.data.viewer-test
@@ -201,6 +215,7 @@
    'frontend-tests.plugins.comments-test
    'frontend-tests.plugins.context-shapes-test
    'frontend-tests.plugins.events-test
+   'frontend-tests.plugins.management-test
    'frontend-tests.plugins.file-test
    'frontend-tests.plugins.flex-test
    'frontend-tests.plugins.format-test
@@ -222,6 +237,7 @@
    'frontend-tests.render-wasm.serialization-test
    'frontend-tests.render-wasm.text-editor-apply-styles-test
    'frontend-tests.render-wasm.text-editor-caret-color-test
+   'frontend-tests.render-wasm.text-paste-test
    'frontend-tests.router-test
    'frontend-tests.svg-fills-test
    'frontend-tests.svg-filters-test
@@ -231,6 +247,7 @@
    'frontend-tests.tokens.logic.token-actions-test
    'frontend-tests.tokens.logic.token-data-test
    'frontend-tests.tokens.logic.token-remapping-test
+   'frontend-tests.tokens.referenced-token-value-test
    'frontend-tests.tokens.style-dictionary-test
    'frontend-tests.tokens.token-errors-test
    'frontend-tests.tokens.logic.tokens-status-test
@@ -244,7 +261,11 @@
    'frontend-tests.ui.ds-controls-numeric-input-test
    'frontend-tests.ui.gradient-handlers-test
    'frontend-tests.ui.history-test
+   'frontend-tests.ui.inspect-geometry-test
+   'frontend-tests.ui.inspect-stroke-tokens-test
+   'frontend-tests.ui.jobs-progress-test
    'frontend-tests.ui.layout-container-multiple-test
+   'frontend-tests.ui.measurements-test
    'frontend-tests.ui.measures-menu-props-test
    'frontend-tests.ui.organization-team-switch-test
    'frontend-tests.ui.routes-test
@@ -261,6 +282,7 @@
    'frontend-tests.util-queue-test
    'frontend-tests.util-range-tree-test
    'frontend-tests.util-simple-math-test
+   'frontend-tests.util-text-clipboard-test
    'frontend-tests.util-text-editor-test
    'frontend-tests.util-webapi-test
    'frontend-tests.util.dom.dnd-test

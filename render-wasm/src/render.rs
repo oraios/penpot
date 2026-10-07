@@ -767,8 +767,9 @@ impl RenderState {
         paint.set_style(skia::PaintStyle::Stroke);
         paint.set_stroke_width(stroke_outset * 2.0);
 
-        let mut outline = skia::Path::default();
+        let mut outline = skia::PathBuilder::new();
         if skia::path_utils::fill_path_with_paint(&base, &paint, &mut outline, None, None) {
+            let outline = outline.detach();
             if let Some(united) = base.op(&outline, skia::PathOp::Union) {
                 return united;
             }
@@ -989,7 +990,12 @@ impl RenderState {
     }
 
     pub fn set_background_color(&mut self, color: skia::Color) {
+        if self.background_color == color {
+            return;
+        }
         self.background_color = color;
+        // Tiles bake the background in; old atlas pixels would show on pan/zoom.
+        self.surfaces.atlas.clear();
     }
 
     pub fn set_preview_mode(&mut self, enabled: bool) {
