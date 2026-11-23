@@ -21,7 +21,6 @@
    [app.http :as-alias http]
    [app.http.access-token :as-alias actoken]
    [app.jobs :as jobs]
-   [app.loggers.audit.tasks :as-alias tasks]
    [app.loggers.webhooks :as-alias webhooks]
    [app.rpc :as-alias rpc]
    [app.setup :as-alias setup]
@@ -46,6 +45,57 @@
     "user-info-failed"
     "incomplete-user-info"
     "unexpected-error"})
+
+(def ^:private subscription-creation-events
+  #{"create-subscription" "create-trial-subscription"})
+
+(def ^:private subscription-creation-telemetry-props
+  #{:type
+    :deployment
+    :quantity
+    :subscription-mode})
+
+(def ^:private subscription-update-telemetry-props
+  #{:type
+    :deployment
+    :previous-status
+    :status
+    :previous-cancel-at-period-end
+    :cancel-at-period-end
+    :previous-cancel-at
+    :cancel-at
+    :changed-fields})
+
+(def ^:private subscription-summary-telemetry-props
+  #{:type
+    :deployment
+    :instance-id
+    :snapshot-date
+    :trialing-count
+    :active-count
+    :active-cancel-scheduled-count
+    :past-due-count
+    :canceled-count
+    :unpaid-count
+    :incomplete-count
+    :incomplete-expired-count
+    :paused-count
+    :other-count
+    :total-count
+    :sync-succeeded
+    :sync-failed
+    :snapshot-complete})
+
+(def ^:private telemetry-sources
+  #{"telemetry:backend" "telemetry:frontend"})
+
+(defn telemetry-shadow-source?
+  "True for the anonymized shadow sources of the telemetry consumer. A
+  selective consumer must skip them: the full row carries the event
+  already, and the shadow keeps the event name, so processing it would
+  ingest the same event twice (once full, once anonymized)."
+  [source]
+  (contains? telemetry-sources (str source)))
 
 (def ^:private safe-backend-context-keys
   #{:version
@@ -235,11 +285,18 @@
 (defn- append-audit-entry
   [cfg params]
   (let [params (-> params
-                   (assoc :id (uuid/next))
+                   ;; Keep a pre-assigned id (process-event assigns one so
+                   ;; the webhook task can reference the stored row).
+                   (update :id #(or % (uuid/next)))
                    (update :props db/tjson)
                    (update :context db/tjson)
                    (update :ip-addr db/inet))
         params (select-keys params event-keys)]
+    ;; The producer knows nothing about the consumers: one row, and each
+    ;; consumer reads it from its own cursor. The row and the cursor
+    ;; position commit independently, so a consumer can process a row
+    ;; only after it is visible here (the snapshot cut in the consumer
+    ;; guarantees it).
     (db/insert! cfg :audit-log params)))
 
 (def ^:private xf:filter-telemetry-props
@@ -254,76 +311,87 @@
 
 (defn- process-event
   [cfg event]
-  (when (contains? cf/flags :audit-log-logger)
-    (l/log! ::l/logger "app.audit"
-            ::l/level :info
-            :profile-id (str (:profile-id event))
-            :ip-addr (str (:ip-addr event))
-            :type (:type event)
-            :name (:name event)
-            :props (json/encode (:props event) :key-fn json/write-camel-key)
-            :context (json/encode (:context event) :key-fn json/write-camel-key)))
+  ;; Assign the row id up-front so every sink below shares it: the
+  ;; stored row and the `:process-webhook-event` task params. The
+  ;; webhook trigger row links back to its origin event through props
+  ;; `:event-id`, which used to land nil because the id was generated
+  ;; inside `append-audit-entry` without reaching the worker params.
+  (let [event (assoc event :id (or (:id event) (uuid/next)))]
+    (when (contains? cf/flags :audit-log-logger)
+      (l/log! ::l/logger "app.audit"
+              ::l/level :info
+              :profile-id (str (:profile-id event))
+              :ip-addr (str (:ip-addr event))
+              :type (:type event)
+              :name (:name event)
+              :props (json/encode (:props event) :key-fn json/write-camel-key)
+              :context (json/encode (:context event) :key-fn json/write-camel-key)))
 
-  (when (contains? cf/flags :audit-log)
-    (append-audit-entry cfg event))
+    (when cf/audit-persist?
+      (append-audit-entry cfg event))
 
-  (when (contains? cf/flags :telemetry)
-    ;; NOTE: when both audit-log and telemetry are enabled, events are stored
-    ;; twice: once with full details (above) and once stripped of props and
-    ;; ip-addr, tagged with source="telemetry" so the telemetry task can
-    ;; collect and ship them.  The profile-id is preserved (UUIDs are already
-    ;; anonymous random identifiers).  Only a safe subset of context fields
-    ;; is kept: initiator, version, client-version and client-user-agent.
-    ;; Timestamps are truncated to day precision to avoid leaking exact event
-    ;; timing.
-    (let [event (-> event
-                    (filter-telemetry-props)
-                    (filter-telemetry-context)
-                    (update :created-at ct/truncate :days)
-                    (update :tracked-at ct/truncate :days)
-                    (assoc :source "telemetry:backend")
-                    (assoc :ip-addr "0.0.0.0"))]
-      (append-audit-entry cfg event)))
+    (when cf/telemetry-enabled?
+      ;; NOTE: when both persistence and telemetry are enabled, events are stored
+      ;; twice: once with full details (above) and once stripped of props and
+      ;; ip-addr, tagged with source="telemetry:*" so the telemetry consumer
+      ;; (id 0) can send them.  The profile-id is preserved (UUIDs are already
+      ;; anonymous random identifiers).  Only a safe subset of context fields
+      ;; is kept: initiator, version, client-version and client-user-agent.
+      ;; Timestamps are truncated to day precision to avoid leaking exact event
+      ;; timing. The shadow row gets its own id: reusing the full row id
+      ;; would collide on the primary key.
+      (let [event (-> event
+                      (assoc :id (uuid/next))
+                      (filter-telemetry-props)
+                      (filter-telemetry-context)
+                      (update :created-at ct/truncate :days)
+                      (update :tracked-at ct/truncate :days)
+                      (assoc :source "telemetry:backend")
+                      (assoc :ip-addr "0.0.0.0"))]
+        (append-audit-entry cfg event)))
 
-  (when (and (contains? cf/flags :webhooks)
-             (::webhooks/event? event))
-    (let [batch-key     (::webhooks/batch-key event)
-          batch-timeout (::webhooks/batch-timeout event)
-          label         (dm/str "rpc:" (:name event))
-          label         (cond
-                          (ifn? batch-key)    (dm/str label ":" (batch-key (::rpc/params event)))
-                          (string? batch-key) (dm/str label ":" batch-key)
-                          :else               label)
-          dedupe?       (boolean (and batch-key batch-timeout))]
+    (when (and cf/webhooks-enabled?
+               (::webhooks/event? event))
+      (let [batch-key     (::webhooks/batch-key event)
+            batch-timeout (::webhooks/batch-timeout event)
+            label         (dm/str "rpc:" (:name event))
+            label         (cond
+                            (ifn? batch-key)    (dm/str label ":" (batch-key (::rpc/params event)))
+                            (string? batch-key) (dm/str label ":" batch-key)
+                            :else               label)
+            debounce?     (boolean (and batch-key batch-timeout))]
 
-      (jobs/submit cfg
-                   {::jobs/name :process-webhook-event
-                    ::jobs/queue :webhooks
-                    ::jobs/max-retries 0
-                    ::jobs/delay (or batch-timeout 0)
-                    ::jobs/dedupe dedupe?
-                    ::jobs/label label
-                    ;; The event travels as an opaque transit blob:
-                    ;; transit preserves the instant/UUID/set types
-                    ;; that plain JSON props cannot carry.
-                    ::jobs/params {:event-blob
-                                   (t/encode-str
-                                    (-> event
-                                        (d/without-qualified)
-                                        (dissoc :source)
-                                        (dissoc :context)
-                                        (dissoc :ip-addr)
-                                        (dissoc :type)))}})))
-  event)
+        (jobs/submit cfg
+                     {::jobs/name :process-webhook-event
+                      ::jobs/queue :webhooks
+                      ::jobs/max-retries 0
+                      ::jobs/delay (or batch-timeout 0)
+                      ;; A batch slides its window with every event and
+                      ;; delivers the last payload, so the receiver is
+                      ;; told once about the whole burst.
+                      ::jobs/debounce debounce?
+                      ::jobs/label label
+                      ;; The event travels as an opaque transit blob:
+                      ;; transit preserves the instant/UUID/set types
+                      ;; that plain JSON props cannot carry.
+                      ::jobs/params {:event-blob
+                                     (t/encode-str
+                                      (-> event
+                                          (d/without-qualified)
+                                          (dissoc :source)
+                                          (dissoc :context)
+                                          (dissoc :ip-addr)
+                                          (dissoc :type)))}})))
+    event))
 
 (defn submit*
-  "A public API, lower-level than submit, assumes all required fields are filled"
+  "A public API, lower-level than submit, assumes all required fields are
+  filled. A failure propagates: an event that cannot be stored never
+  reaches any consumer, and nothing records that it was lost. Swallowing
+  it here made that invisible."
   [cfg event]
-  (try
-    (let [event (check-event event)]
-      (db/tx-run! cfg process-event event))
-    (catch Throwable cause
-      (l/error :hint "unexpected error processing event" :cause cause))))
+  (let [event (check-event event)]
+    (db/tx-run! cfg process-event event)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; PUBLIC API
@@ -332,6 +400,24 @@
 (defn filter-telemetry-props
   [{:keys [source name props type] :as params}]
   (cond
+    (and (= type "action")
+         (contains? subscription-creation-events name)
+         (or (= source "backend")
+             (= source "frontend")))
+    (let [props' (into {} xf:filter-telemetry-props props)
+          props' (merge props' (select-keys props subscription-creation-telemetry-props))]
+      (assoc params :props props'))
+
+    (and (= source "backend")
+         (= type "action")
+         (= name "update-subscription"))
+    (assoc params :props (select-keys props subscription-update-telemetry-props))
+
+    (and (= source "backend")
+         (= type "action")
+         (= name "subscription-summary"))
+    (assoc params :props (select-keys props subscription-summary-telemetry-props))
+
     (and (= source "backend")
          (= name "organization-sso-auth-failed"))
     (let [props' (into {} xf:filter-telemetry-props props)
@@ -349,6 +435,8 @@
           props' (-> props'
                      (assoc :lang (:lang props))
                      (assoc :auth-backend (:auth-backend props))
+                     (assoc :source (:source props))
+                     (assoc :activation (:activation props))
                      (assoc :email-domain (email/get-domain (:email props)))
                      (d/without-nils))]
       (assoc params :props props'))
@@ -378,12 +466,14 @@
 (defn- coerce-profile-id
   "Normalize a hand-written `::audit/profile-id` override to a uuid.
 
-  `schema:event` requires a uuid and `submit*` swallows the validation
-  error, so a value that is not a uuid loses the event instead of
-  failing loudly. Commands read the override from places that are not
-  typed by us (token claims, stringly-typed drivers), so a string has
-  to be accepted. Anything that cannot become a uuid is discarded, and
-  the event falls back to the caller, which is always a valid uuid."
+  `schema:event` requires a uuid and `submit*` propagates the validation
+  error; `wrap-audit` runs after the command commits (moving it inside the
+  transaction is project P8 in `TODO.md`), so an invalid override would fail
+  the response over an already committed action. Commands read the
+  override from places that are not typed by us (token claims,
+  stringly-typed drivers), so a string has to be accepted. Anything that
+  cannot become a uuid is discarded, and the event falls back to the
+  caller, which is always a valid uuid."
   [v]
   (let [coerced (cond
                   ;; Fast path: the override comes straight from a `profile`
@@ -402,6 +492,89 @@
 
     coerced))
 
+(def ^:private sql:team-ids-by-projects
+  "SELECT team_id
+     FROM project
+    WHERE id = ANY(?::uuid[])")
+
+(def ^:private sql:team-ids-by-files
+  "SELECT p.team_id AS team_id
+     FROM file AS f
+     JOIN project AS p ON (p.id = f.project_id)
+    WHERE f.id = ANY(?::uuid[])")
+
+(def ^:private xf:team-ids
+  "Transducer: pull the team id out of a team/project/file resolution
+  row. Allocated once so hot paths (every audited RPC) do not rebuild
+  it per call."
+  (map :team-id))
+
+(defn- resolve-team-ids
+  "Resolve one bag of project or file ids to team ids with one ANY(?)
+  query on a plain connection. The result holds one tiny row per id,
+  so neither a cursor nor a transaction is needed."
+  [cfg kind ids]
+  ;; Fetch inside the connection, reduce outside it: the rows are
+  ;; already materialized, so the pool connection is held as briefly
+  ;; as possible.
+  (->> (db/run! cfg
+                (fn [{:keys [::db/conn]}]
+                  (db/exec! conn [(case kind
+                                    :project sql:team-ids-by-projects
+                                    :file sql:team-ids-by-files)
+                                  (db/create-array conn "uuid" ids)])))
+       (into #{} xf:team-ids)))
+
+(defn get-team-ids
+  "Resolve a mixed bag of team, project and file ids to team ids with
+  two batched lookups. Producers of cascade-style events call it so
+  consumers never join production tables. The pure part runs without
+  touching the database; each lookup resolves its connection lazily,
+  only when it has ids (reusing the caller transaction). Every id
+  reaching this function is a UUID already (RPC params and frontend
+  ingest travel as transit, jobs read DB rows): anything else is a
+  bug at the source, never coerced here."
+  [cfg {:keys [team-ids project-ids file-ids]}]
+  (let [direct (into #{} team-ids)]
+    (-> direct
+        (into (if (seq project-ids)
+                (resolve-team-ids cfg :project project-ids)
+                #{}))
+        (into (if (seq file-ids)
+                (resolve-team-ids cfg :file file-ids)
+                #{})))))
+
+(def ^:private read-event-names
+  "Read commands excluded from team-id resolution on top of the `get-*`
+  prefix: their events carry no consumer state, so the lookup would only
+  tax the read path."
+  #{"has-file-libraries"})
+
+(defn- read-event?
+  [event-name]
+  (or (str/starts-with? event-name "get-")
+      (contains? read-event-names event-name)))
+
+(defn- enrich-team-id
+  "Adds the team id to the event props when it is missing and can be resolved
+  locally, so consumers do not have to join production tables. Only events that
+  already carry a project or file id are considered: read commands put the
+  entity id under `:id`, and resolving those would add a query to every read."
+  [cfg event-name props]
+  (if (or (:team-id props)
+          (read-event? event-name)
+          (and (nil? (:project-id props))
+               (nil? (:file-id props))))
+    props
+    (let [project-id (:project-id props)
+          file-id    (:file-id props)
+          team-id    (or (when (some? project-id)
+                           (first (get-team-ids cfg {:project-ids [project-id]})))
+                         (when (some? file-id)
+                           (first (get-team-ids cfg {:file-ids [file-id]}))))]
+      (cond-> props
+        (some? team-id) (assoc :team-id team-id)))))
+
 (defn prepare-rpc-event
   [cfg mdata params result]
   (let [resultm      (meta result)
@@ -416,25 +589,32 @@
                          (::rpc/profile-id params)
                          uuid/zero)
 
+        module       (get cfg ::rpc/module)
+        event-name   (or (::name resultm)
+                         (let [sname (::sv/name mdata)]
+                           (if (not= module "main")
+                             (str module "-" sname)
+                             sname)))
+
         props        (-> (or (::replace-props resultm)
                              (merge params (::props resultm)))
                          (clean-props))
+
+        ;; Resolve the team locally when the event carries a project or file
+        ;; id, so the consumers do not need to join production tables.
+        ;; Reads are excluded: their events carry no consumer state.
+        props        (enrich-team-id cfg event-name props)
 
         context      (-> (::context resultm)
                          (merge (prepare-context-from-request request))
                          (assoc :request-id (::rpc/request-id params))
                          (d/without-nils))
 
-        ip-addr      (inet/parse-request request)
-        module       (get cfg ::rpc/module)]
+        ip-addr      (inet/parse-request request)]
 
     {:type (or (::type resultm)
                (::rpc/type cfg))
-     :name (or (::name resultm)
-               (let [sname (::sv/name mdata)]
-                 (if (not= module "main")
-                   (str module "-" sname)
-                   sname)))
+     :name event-name
 
      :profile-id profile-id
      :ip-addr ip-addr
@@ -491,12 +671,41 @@
                   (d/without-nils))]
     (submit* cfg event)))
 
+(defn submit-create-event
+  "Emits a `create-*` audit event for an entity created as a side effect of a
+  bulk operation (import, duplicate, clone). Those entities get no event from
+  their own command, so a local projection cannot key them otherwise. The
+  event is built by hand and does not pass through `prepare-rpc-event`, so its
+  props are passed as-is minus nils."
+  [cfg params event-name props]
+  (when cf/audit-persist?
+    (submit cfg
+            (-> (event-from-rpc-params params)
+                (assoc :name event-name)
+                (assoc :props (d/without-nils props))))))
+
+(def ^:private sql:get-file-event-columns
+  "SELECT id, name, project_id, created_at, modified_at, revn
+     FROM file WHERE id = ?;")
+
+(defn submit-file-created-event
+  "Emit a `create-file` event for a file born inside a bulk operation,
+  with the same prop shape as the `create-file` command event. Only
+  the file id is needed: the light columns are read back (no data
+  blob), so projections that key on name, revn or timestamps work.
+  `extra` carries what the row lacks (the team id)."
+  [cfg params file-id extra]
+  (when-let [row (db/exec-one! cfg [sql:get-file-event-columns file-id])]
+    (submit-create-event cfg params "create-file" (merge row extra))))
+
 (defn insert
   "Submit audit event to the collector, intended to be used only from
   command line helpers because this skips all webhooks and telemetry
   logic."
   [cfg event]
-  (when (contains? cf/flags :audit-log)
+  (when cf/audit-persist?
+    ;; Transactional (not a bare connection): the row commits or
+    ;; vanishes whole (see append-audit-entry).
     (let [tnow  (ct/now)
           event (-> event
                     (assoc :created-at tnow)
@@ -507,4 +716,4 @@
                     (update :source d/nilv "backend")
                     (select-keys event-keys)
                     (check-event))]
-      (db/run! cfg append-audit-entry event))))
+      (db/tx-run! cfg append-audit-entry event))))

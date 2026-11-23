@@ -18,13 +18,13 @@
    [app.loggers.audit :as audit]
    [app.loggers.database :as loggers.db]
    [app.loggers.mattermost :as loggers.mm]
+   [app.metrics :as mtx]
    [app.rpc :as-alias rpc]
    [app.rpc.climit :as-alias climit]
    [app.rpc.doc :as-alias doc]
    [app.rpc.helpers :as rph]
    [app.util.inet :as inet]
-   [app.util.services :as sv]
-   [clojure.set :as set]))
+   [app.util.services :as sv]))
 
 (def ^:private event-columns
   [:id
@@ -71,6 +71,9 @@
 (def ^:private xf:map-event-row
   (comp
    (map adjust-timestamp)
+   ;; Each row mints its own id: the full row and its telemetry
+   ;; shadow are distinct records that must not share it.
+   (map #(assoc % :id (uuid/next)))
    (map event->row)))
 
 (defn- prepare-events
@@ -80,8 +83,7 @@
         initiator (audit/get-client-initiator request)
         xform     (comp
                    (map (fn [event]
-                          {:id (uuid/next)
-                           :type (:type event)
+                          {:type (:type event)
                            :name (:name event)
                            :props (:props event)
                            ;; The initiator always comes from the
@@ -113,6 +115,19 @@
               (assoc :source "telemetry:frontend"))))
    (map event->row)))
 
+(defn- record-ingested
+  [metrics kind outcome amount]
+  (when (pos? amount)
+    (mtx/run! metrics :id :audit-ingest-events :labels [kind outcome] :inc amount)))
+
+(defn- insert-rows!
+  [tx rows]
+  (when (seq rows)
+    ;; The producer only inserts: each consumer reads the row from its
+    ;; own cursor, so there is no queue to fill here (and no consumer
+    ;; contract to keep in sync with this namespace).
+    (db/insert-many! tx :audit-log event-columns rows)))
+
 (defn- handle-events
   [{:keys [::db/pool] :as cfg} params]
   (let [events (prepare-events params)]
@@ -124,19 +139,30 @@
       (run! (partial loggers.db/emit cfg) events)
       (run! (partial loggers.mm/emit cfg) events))
 
-    (when (contains? cf/flags :audit-log)
-      ;; Process and save full audit events when audit-log flag is active
-      (when-let [rows (-> (sequence xf:map-event-row events)
-                          (not-empty))]
-        (db/insert-many! pool :audit-log event-columns rows)))
-
-    (when (contains? cf/flags :telemetry)
-      ;; Store anonymized frontend events so the telemetry task can ship them
-      ;; in batches. Runs independently from the audit-log insert above so
-      ;; both modes can be active simultaneously.
-      (when-let [rows (-> (sequence xf:map-telemetry-event-row events)
-                          (not-empty))]
-        (db/insert-many! pool :audit-log event-columns rows)))))
+    ;; The rows of both faces commit together (the consumers read them
+    ;; from their own cursors afterwards). Both faces are best-effort,
+    ;; so a failure drops the whole batch (counted below as failed); the
+    ;; endpoint still answers without breaking the request.
+    (let [metrics     (mtx/instance cfg)
+          full-rows   (if cf/audit-persist?
+                        (into [] xf:map-event-row events)
+                        [])
+          shadow-rows (if cf/telemetry-enabled?
+                        (into [] xf:map-telemetry-event-row events)
+                        [])]
+      (try
+        (db/tx-run! pool
+                    (fn [tx]
+                      (insert-rows! tx full-rows)
+                      (insert-rows! tx shadow-rows)))
+        (record-ingested metrics "full" "inserted" (count full-rows))
+        (record-ingested metrics "shadow" "inserted" (count shadow-rows))
+        (catch Throwable cause
+          ;; Whatever never landed counts as failed per attempted
+          ;; kind; the endpoint logs the cause as before.
+          (record-ingested metrics "full" "failed" (count full-rows))
+          (record-ingested metrics "shadow" "failed" (count shadow-rows))
+          (throw cause))))))
 
 (def ^:private valid-event-types
   #{"action" "identify" "trigger"})
@@ -168,10 +194,14 @@
    ::doc/skip true
    ::doc/added "1.17"}
   [{:keys [::db/pool] :as cfg} params]
-  (let [telemetry? (contains? cf/flags :telemetry)
-        audit-log? (contains? cf/flags :audit-log)
+  (let [telemetry? cf/telemetry-enabled?
+        ;; :error-reporting also needs the batch: the crash events reach
+        ;; the reporters here, before any row is written. The wire signal
+        ;; in get-environment-data includes the same case.
         enabled?   (and (not (db/read-only? pool))
-                        (or audit-log? telemetry?))]
+                        (or cf/audit-persist?
+                            telemetry?
+                            cf/error-reporting-enabled?))]
     (when enabled?
       (try
         (handle-events cfg params)
@@ -185,15 +215,19 @@
 ;; GET-ENVIRONMENT-DATA
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def ^:private enabled-flags
-  "Subset of the backend flags that are safe to expose publicly and that
-  drive frontend event collection."
-  #{:audit-log :telemetry})
-
 (defn- environment-data
+  "The audit-log signal on the wire means the backend stores full rows. It is
+  derived from the boot-computed persistence value, not from a configurable
+  flag, and also covers error reporting so frontend crash events keep flowing."
   []
   {:deployment (if (cf/get :is-saas) "saas" "selfhost")
-   :flags      (set/intersection cf/flags enabled-flags)})
+   :flags      (cond-> #{}
+                 (or cf/audit-persist?
+                     cf/error-reporting-enabled?)
+                 (conj :audit-log)
+
+                 cf/telemetry-enabled?
+                 (conj :telemetry))})
 
 (def ^:private schema:get-environment-data-result
   [:map

@@ -7,6 +7,7 @@
 (ns common-tests.files.tokens-test
   (:require
    [app.common.files.tokens :as cfo]
+   [app.common.schema :as sm]
    [app.common.test-helpers.files :as thf]
    [app.common.test-helpers.ids-map :as thi]
    [app.common.test-helpers.tokens :as tht]
@@ -1242,6 +1243,77 @@
       (t/is (= 1 (count tokens)))
       (t/is (= "8px" (:value (get tokens "spacing")))))))
 
+(defn- three-sets-lib
+  "A library with the sets `set-a`, `set-b` and `set-c`, in that order,
+  each defining `spacing`; `set-b` also defines `radius`."
+  []
+  (-> (ctob/make-tokens-lib)
+      (ctob/add-set (ctob/make-token-set :id (thi/new-id! :set-a) :name "set-a"))
+      (ctob/add-set (ctob/make-token-set :id (thi/new-id! :set-b) :name "set-b"))
+      (ctob/add-set (ctob/make-token-set :id (thi/new-id! :set-c) :name "set-c"))
+      (ctob/add-token (thi/id :set-a) (ctob/make-token :name "spacing" :type :spacing :value "8px"))
+      (ctob/add-token (thi/id :set-b) (ctob/make-token :name "spacing" :type :spacing :value "16px"))
+      (ctob/add-token (thi/id :set-b) (ctob/make-token :name "radius" :type :border-radius :value "4px"))
+      (ctob/add-token (thi/id :set-c) (ctob/make-token :name "spacing" :type :spacing :value "32px"))))
+
+(t/deftest test-get-active-token-sets
+  (t/testing "returns the active sets unmerged, in set order"
+    (let [tokens-lib    (three-sets-lib)
+          tokens-status (ctos/make-tokens-status :active-set-ids #{(thi/id :set-c) (thi/id :set-a)})
+          sets          (cfo/get-active-token-sets tokens-status tokens-lib)]
+      (t/is (= [(thi/id :set-a) (thi/id :set-c)] (mapv first sets)))
+      (t/is (identical? (ctob/get-tokens tokens-lib (thi/id :set-a)) (second (first sets)))
+            "the tokens are the set's own map, so an unchanged set is the same object")))
+
+  (t/testing "returns no sets when no sets are active"
+    (t/is (= [] (cfo/get-active-token-sets (ctos/make-tokens-status) (three-sets-lib))))))
+
+(t/deftest test-get-active-token-sets-force
+  (t/testing "an inactive forced set comes first, with the lowest precedence"
+    (let [tokens-lib    (three-sets-lib)
+          tokens-status (ctos/make-tokens-status :active-set-ids #{(thi/id :set-a)})
+          sets          (cfo/get-active-token-sets-force tokens-status tokens-lib (thi/id :set-b))]
+      (t/is (= [(thi/id :set-b) (thi/id :set-a)] (mapv first sets)))))
+
+  (t/testing "an active forced set keeps its place and is not added twice"
+    (let [tokens-lib    (three-sets-lib)
+          tokens-status (ctos/make-tokens-status :active-set-ids #{(thi/id :set-a) (thi/id :set-b)})
+          sets          (cfo/get-active-token-sets-force tokens-status tokens-lib (thi/id :set-b))]
+      (t/is (= [(thi/id :set-a) (thi/id :set-b)] (mapv first sets)))))
+
+  (t/testing "an unknown forced set id adds nothing"
+    (let [tokens-lib    (three-sets-lib)
+          tokens-status (ctos/make-tokens-status :active-set-ids #{(thi/id :set-a)})
+          sets          (cfo/get-active-token-sets-force tokens-status tokens-lib (uuid/next))]
+      (t/is (= [(thi/id :set-a)] (mapv first sets))))))
+
+(t/deftest test-get-token-sets-for-edit
+  (t/testing "returns every set, with the edited set moved last"
+    (let [sets (cfo/get-token-sets-for-edit (three-sets-lib) (thi/id :set-a))]
+      (t/is (= [(thi/id :set-b) (thi/id :set-c) (thi/id :set-a)] (mapv first sets)))))
+
+  (t/testing "keeps the set order without a set id"
+    (let [sets (cfo/get-token-sets-for-edit (three-sets-lib) nil)]
+      (t/is (= [(thi/id :set-a) (thi/id :set-b) (thi/id :set-c)] (mapv first sets)))))
+
+  (t/testing "keeps the set order for an unknown set id"
+    (let [sets (cfo/get-token-sets-for-edit (three-sets-lib) (uuid/next))]
+      (t/is (= [(thi/id :set-a) (thi/id :set-b) (thi/id :set-c)] (mapv first sets))))))
+
+(t/deftest test-without-token
+  (let [sets (cfo/get-token-sets-for-edit (three-sets-lib) nil)]
+    (t/testing "leaves the token out of every set that defines it"
+      (let [sets' (cfo/without-token sets "spacing")]
+        (t/is (= (mapv first sets) (mapv first sets')))
+        (t/is (not-any? #(contains? (second %) "spacing") sets'))
+        (t/is (contains? (second (nth sets' 1)) "radius"))))
+
+    (t/testing "keeps the sets without the token as the same objects"
+      (t/is (= [true false true] (mapv identical? sets (cfo/without-token sets "radius")))))
+
+    (t/testing "keeps every set when no set defines the token"
+      (t/is (every? true? (map identical? sets (cfo/without-token sets "missing")))))))
+
 (t/deftest test-sync-tokens-status-with-lib
   (t/testing "removes theme ids that no longer exist in the lib"
     (let [theme-1-id (thi/new-id! :theme-1)
@@ -1494,3 +1566,257 @@
         ;; set-theme-active false removes non-existent id
         (let [status' (cfo/set-theme-active all-invalid tokens-lib invalid-theme-id false)]
           (t/is (not (ctos/theme-active? status' invalid-theme-id))))))))
+
+;; absorb-tokens-lib
+
+(defn- make-sample-tokens-lib
+  "A tokens-lib with a set (and a token in it) for each label. Each set
+   is named as its label, and its id is registered in thi under it."
+  [& set-labels]
+  (reduce (fn [tokens-lib set-label]
+            (let [set-id (thi/new-id! set-label)]
+              (-> tokens-lib
+                  (ctob/add-set (ctob/make-token-set :id set-id
+                                                     :name (name set-label)))
+                  (ctob/add-token set-id (ctob/make-token :name (str (name set-label) "-token")
+                                                          :type :border-radius
+                                                          :value 10)))))
+          (ctob/make-tokens-lib)
+          set-labels))
+
+(defn- make-sample-tokens-status
+  "A tokens-status with the sets of the given labels active. The sets
+   must have been created before by make-sample-tokens-lib."
+  [& set-labels]
+  (ctos/make-tokens-status :active-set-ids (into #{} (map thi/id) set-labels)))
+
+(defn- make-sample-data
+  "File data with the given tokens-lib, tokens-status and tokens-source.
+   Those not given are left unset."
+  [label & {:keys [tokens-lib tokens-status tokens-source]}]
+  (-> (ctf/file-data (thf/sample-file label))
+      (cfo/ensure-tokens-lib)
+      (cfo/update-tokens-lib (constantly tokens-lib))
+      (cfo/update-tokens-status (constantly tokens-status))
+      (cfo/set-tokens-source tokens-source)))
+
+(t/deftest test-absorb-tokens-lib
+  (t/testing "copies the tokens-lib of the library and unsets the tokens-source"
+    (let [library-data (make-sample-data :library
+                                         :tokens-lib (make-sample-tokens-lib :lib-set))
+          file-data    (make-sample-data :file1
+                                         :tokens-source (:id library-data))
+          file-data'   (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= (cfo/get-tokens-lib library-data) (cfo/get-tokens-lib file-data')))
+      (t/is (nil? (cfo/get-tokens-source file-data')))
+      (t/is (true? (cfo/effective-tokens-source? file-data' (:id file-data'))))
+      (t/is (true? (cfo/editable-tokens? file-data')))))
+
+  (t/testing "replaces the own tokens-lib of the file"
+    (let [library-data (make-sample-data :library
+                                         :tokens-lib (make-sample-tokens-lib :lib-set))
+          file-data    (make-sample-data :file1
+                                         :tokens-lib (make-sample-tokens-lib :own-set)
+                                         :tokens-source (:id library-data))
+          file-data'   (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= (cfo/get-tokens-lib library-data) (cfo/get-tokens-lib file-data')))
+      (t/is (nil? (cfo/get-tokens-source file-data')))))
+
+  (t/testing "copies an empty tokens-lib of the library"
+    (let [empty-lib    (ctob/make-tokens-lib)
+          library-data (make-sample-data :library :tokens-lib empty-lib)
+          file-data    (make-sample-data :file1
+                                         :tokens-lib (make-sample-tokens-lib :own-set)
+                                         :tokens-source (:id library-data))
+          file-data'   (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= empty-lib (cfo/get-tokens-lib file-data')))
+      (t/is (nil? (cfo/get-tokens-source file-data')))))
+
+  (t/testing "unsets the tokens-source even if the file had no tokens-source"
+    (let [library-data (make-sample-data :library
+                                         :tokens-lib (make-sample-tokens-lib :lib-set))
+          file-data    (make-sample-data :file1)
+          file-data'   (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= (cfo/get-tokens-lib library-data) (cfo/get-tokens-lib file-data')))
+      (t/is (nil? (cfo/get-tokens-source file-data')))))
+
+  (t/testing "does not change anything else in the file"
+    (let [library-data (make-sample-data :library
+                                         :tokens-lib (make-sample-tokens-lib :lib-set))
+          file-data    (make-sample-data :file1
+                                         :tokens-source (:id library-data))
+          file-data'   (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= (dissoc file-data :tokens-lib :tokens-status :tokens-source)
+               (dissoc file-data' :tokens-lib :tokens-status :tokens-source))))))
+
+(t/deftest test-absorb-tokens-lib-status
+  (t/testing "preserves the tokens-status of the file"
+    (let [library-lib    (make-sample-tokens-lib :lib-set :other-set)
+          file-status    (make-sample-tokens-status :lib-set)
+          library-status (make-sample-tokens-status :other-set)
+          library-data   (make-sample-data :library
+                                           :tokens-lib library-lib
+                                           :tokens-status library-status)
+          file-data      (make-sample-data :file1
+                                           :tokens-status file-status
+                                           :tokens-source (:id library-data))
+          file-data'     (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= file-status (cfo/get-tokens-status file-data')))
+      (t/is (not= library-status (cfo/get-tokens-status file-data')))))
+
+  (t/testing "preserves an empty tokens-status of the file"
+    (let [library-lib    (make-sample-tokens-lib :lib-set)
+          file-status    (ctos/make-tokens-status)
+          library-status (make-sample-tokens-status :lib-set)
+          library-data   (make-sample-data :library
+                                           :tokens-lib library-lib
+                                           :tokens-status library-status)
+          file-data      (make-sample-data :file1
+                                           :tokens-status file-status
+                                           :tokens-source (:id library-data))
+          file-data'     (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= file-status (cfo/get-tokens-status file-data')))))
+
+  (t/testing "copies the tokens-status of the library if the file has none"
+    (let [library-lib    (make-sample-tokens-lib :lib-set)
+          library-status (make-sample-tokens-status :lib-set)
+          library-data   (make-sample-data :library
+                                           :tokens-lib library-lib
+                                           :tokens-status library-status)
+          file-data      (make-sample-data :file1
+                                           :tokens-source (:id library-data))
+          file-data'     (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= library-status (cfo/get-tokens-status file-data')))
+      (t/is (= #{(thi/id :lib-set)}
+               (ctos/get-active-set-ids (cfo/get-tokens-status file-data'))))
+      (t/is (some? (ctob/get-set (cfo/get-tokens-lib file-data') (thi/id :lib-set))))))
+
+  (t/testing "leaves the tokens-status unset if neither the file nor the library have one"
+    (let [library-data (make-sample-data :library
+                                         :tokens-lib (make-sample-tokens-lib :lib-set))
+          file-data    (make-sample-data :file1
+                                         :tokens-source (:id library-data))
+          file-data'   (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (nil? (cfo/get-tokens-status file-data'))))))
+
+(t/deftest test-absorb-tokens-lib-library-without-tokens
+  (t/testing "library without tokens-lib: keeps the tokens-lib and tokens-status of the file, and unsets the tokens-source"
+    (let [file-lib       (make-sample-tokens-lib :own-set)
+          file-status    (make-sample-tokens-status :own-set)
+          library-status (ctos/make-tokens-status :active-set-ids #{(uuid/next)})
+          library-data   (make-sample-data :library
+                                           :tokens-status library-status)
+          file-data      (make-sample-data :file1
+                                           :tokens-lib file-lib
+                                           :tokens-status file-status
+                                           :tokens-source (:id library-data))
+          file-data'     (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= file-lib (cfo/get-tokens-lib file-data')))
+      (t/is (= file-status (cfo/get-tokens-status file-data')))
+      (t/is (nil? (cfo/get-tokens-source file-data')))))
+
+  (t/testing "library without tokens-lib: does not copy the tokens-status of the library"
+    (let [library-status (ctos/make-tokens-status :active-set-ids #{(uuid/next)})
+          library-data   (make-sample-data :library
+                                           :tokens-status library-status)
+          file-data      (make-sample-data :file1
+                                           :tokens-source (:id library-data))
+          file-data'     (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (nil? (cfo/get-tokens-lib file-data')))
+      (t/is (nil? (cfo/get-tokens-status file-data')))
+      (t/is (nil? (cfo/get-tokens-source file-data')))))
+
+  (t/testing "library without any tokens attribute"
+    (let [library-data (ctf/file-data (thf/sample-file :library))
+          file-lib     (make-sample-tokens-lib :own-set)
+          file-data    (make-sample-data :file1
+                                         :tokens-lib file-lib
+                                         :tokens-source (:id library-data))
+          file-data'   (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (= file-lib (cfo/get-tokens-lib file-data')))
+      (t/is (nil? (cfo/get-tokens-source file-data')))))
+
+  (t/testing "neither the file nor the library have tokens"
+    (let [library-data (ctf/file-data (thf/sample-file :library))
+          file-data    (ctf/file-data (thf/sample-file :file1))
+          file-data'   (cfo/absorb-tokens-lib file-data library-data)]
+      (t/is (nil? (cfo/get-tokens-lib file-data')))
+      (t/is (nil? (cfo/get-tokens-status file-data')))
+      (t/is (nil? (cfo/get-tokens-source file-data'))))))
+
+(t/deftest test-absorb-tokens-lib-no-library-data
+  (t/testing "nil library-data: the file is returned unchanged"
+    (let [file-lib  (make-sample-tokens-lib :own-set)
+          file-data (make-sample-data :file1
+                                      :tokens-lib file-lib
+                                      :tokens-status (make-sample-tokens-status :own-set)
+                                      :tokens-source (uuid/next))]
+      (t/is (identical? file-data (cfo/absorb-tokens-lib file-data nil)))))
+
+  (t/testing "nil library-data and a file without tokens"
+    (let [file-data (ctf/file-data (thf/sample-file :file1))]
+      (t/is (identical? file-data (cfo/absorb-tokens-lib file-data nil))))))
+
+(t/deftest test-detach-external-references-preserves-own-tokens
+  (let [file   (thf/sample-file :file1)
+        lib    (make-sample-tokens-lib :own-set)
+        status (make-sample-tokens-status :own-set)
+        file   (-> file
+                   (assoc-in [:data :tokens-lib] lib)
+                   (assoc-in [:data :tokens-status] status))]
+    (doseq [source [nil (:id file)]]
+      (t/testing (str "local tokens source " source)
+        (let [file     (cond-> file
+                         source (assoc-in [:data :tokens-source] source))
+              detached (ctf/detach-external-references file (:id file))]
+          (t/is (= source (cfo/get-tokens-source (:data detached))))
+          (t/is (identical? lib (cfo/get-tokens-lib (:data detached))))
+          (t/is (= status (cfo/get-tokens-status (:data detached)))))))))
+
+(t/deftest test-detach-external-references-removes-external-tokens-status
+  (let [file     (-> (thf/sample-file :file1)
+                     (assoc-in [:data :tokens-source] (uuid/next))
+                     (assoc-in [:data :tokens-status] (ctos/make-tokens-status)))
+        detached (ctf/detach-external-references file (:id file))]
+    (t/is (not (contains? (:data detached) :tokens-source)))
+    (t/is (not (contains? (:data detached) :tokens-status)))
+    (t/is (= detached (ctf/check-file detached)))))
+
+;; Token name schema
+
+(t/deftest test-make-token-name-schema
+  (t/testing "rejects a name that already exists as a token"
+    (let [schema (cfo/make-token-name-schema {"foo" {:name "foo"}})]
+      (t/is (false? (sm/validate schema "foo")))))
+
+  (t/testing "rejects a token inside an existing token"
+    (let [schema (cfo/make-token-name-schema {"foo" {:name "foo"}})]
+      (t/is (false? (sm/validate schema "foo.bar")))))
+
+  (t/testing "rejects a token name that collides with a group"
+    (let [schema (cfo/make-token-name-schema {"foo" {"child" {:name "foo.child"}}})]
+      (t/is (false? (sm/validate schema "foo")))))
+
+  (t/testing "rejects a name that exists as a child token"
+    (let [schema (cfo/make-token-name-schema {"foo" {"bar" {:name "foo.bar"}}})]
+      (t/is (false? (sm/validate schema "foo.bar")))))
+
+  (t/testing "accepts a valid sibling name"
+    (let [schema (cfo/make-token-name-schema {"foo" {:name "foo"}})]
+      (t/is (true? (sm/validate schema "bar")))
+      (t/is (true? (sm/validate schema "bar.baz")))))
+
+  (t/testing "rejects every name when there is no tokens tree"
+    (let [schema (cfo/make-token-name-schema nil)]
+      (t/is (false? (sm/validate schema "foo")))))
+
+  (t/testing "rejects names that do not match the token name format"
+    (let [schema (cfo/make-token-name-schema {})]
+      (t/is (false? (sm/validate schema "")))
+      (t/is (false? (sm/validate schema "$foo")))
+      (t/is (false? (sm/validate schema "foo.")))
+      (t/is (false? (sm/validate schema "foo..bar")))))
+
+  (t/testing "rejects names longer than 255 characters"
+    (let [schema (cfo/make-token-name-schema {})]
+      (t/is (false? (sm/validate schema (apply str (repeat 256 "a"))))))))

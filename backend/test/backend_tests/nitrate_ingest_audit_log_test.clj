@@ -43,6 +43,8 @@
                                  :name "create-project"
                                  :type "action"
                                  :profile-id p1
+                                 :profile-email "ada@example.com"
+                                 :profile-name "Ada"
                                  :props {:team-id team-id}
                                  :context {}
                                  :created-at now
@@ -73,9 +75,37 @@
           (t/is (= (str e2) (str (:id e2'))))
           (t/is (= (str p1) (str (:profile-id e1'))))
           (t/is (= (str p2) (str (:profile-id e2'))))
+          (t/is (= "ada@example.com" (:profile-email e1')))
+          (t/is (= "Ada" (:profile-name e1')))
+          (t/is (nil? (:profile-email e2')))
+          (t/is (nil? (:profile-name e2')))
           (t/is (= "127.0.0.1" (:ip-addr e1')))
           (t/is (= "10.0.0.1" (:ip-addr e2')))
           (t/is (string? (:created-at e1')))
           (t/is (string? (:tracked-at e1')))
           (t/is (= (str now) (:created-at e1')))
           (t/is (= (str team-id) (str (get-in e1' [:props :team-id])))))))))
+
+(t/deftest ingest-audit-log-rejects-a-redirect
+  ;; A 3xx is a configuration error, not an empty success: it surfaces a
+  ;; typed error instead of the :malli.core/invalid-schema that a nil schema
+  ;; throws while building the coercer.
+  (binding [cf/flags  (conj cf/flags :admin-console)
+            cf/config (assoc cf/config :admin-console-uri "http://ac.example/admin-console/")]
+    (with-mocks [http-mock {:target 'app.http.client/req
+                            :return {:status 302
+                                     :headers {"location" "http://ac.example/admin-console/api/audit-log"}
+                                     :body ""}}]
+      (let [client (ig/init-key :app.nitrate/client
+                                {::http/client       (Object.)
+                                 ::setup/shared-keys {:admin-console "test-shared-key"}})
+            cfg    {:app.nitrate/client client}
+            err    (try
+                     (nitrate/call cfg :ingest-audit-log
+                                   {::rpc/profile-id (uuid/next)
+                                    :events []})
+                     nil
+                     (catch clojure.lang.ExceptionInfo e e))]
+        (t/is (= 1 (:call-count @http-mock)))
+        (t/is (= :nitrate-http-error (:type (ex-data err))))
+        (t/is (= 302 (:status (ex-data err))))))))

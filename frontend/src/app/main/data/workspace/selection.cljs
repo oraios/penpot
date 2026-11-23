@@ -127,6 +127,19 @@
 
 ;; --- Toggle shape's selection status (selected or deselected)
 
+(defn selected-board-ids
+  "The ids of the boards `ids` belong to: the id itself for a board, the
+  frame of any other shape. Returns them without repeats, in selection
+  order, or nil when `ids` is empty or has a shape on the root, which
+  is not a board to point at."
+  [objects ids]
+  (let [board-ids (into (d/ordered-set)
+                        (keep #(:id (cfh/get-frame objects %)))
+                        ids)]
+    (when (and (seq board-ids)
+               (not (contains? board-ids uuid/zero)))
+      (vec board-ids))))
+
 (defn select-shape
   ([id]
    (select-shape id false))
@@ -146,21 +159,15 @@
      (watch [_ state _]
        (let [page-id              (:current-page-id state)
              objects              (dsh/lookup-page-objects state page-id)
-             selected-id          (dsh/lookup-selected state)
-             selected             (dsh/lookup-shapes state selected-id)
-             frame-ids            (map (fn [item] (let [parent (cfh/get-frame objects (:id item))]
-                                                    (:id parent))) selected)
-             params-without-board (-> (rt/get-params state)
-                                      (dissoc :board-id))
-             params-board         (-> (rt/get-params state)
-                                      (assoc :board-id frame-ids))]
+             board-ids            (selected-board-ids objects (dsh/lookup-selected state))
+             params               (rt/get-params state)]
 
          (rx/of (dwc/expand-all-parents [id] objects)
                 :interrupt
                 ::dwsp/interrupt
-                (if (some #(= % uuid/zero) frame-ids)
-                  (rt/nav :workspace params-without-board {::rt/replace true})
-                  (rt/nav :workspace params-board {::rt/replace true}))))))))
+                (if (some? board-ids)
+                  (rt/nav :workspace (assoc params :board-id board-ids) {::rt/replace true})
+                  (rt/nav :workspace (dissoc params :board-id) {::rt/replace true}))))))))
 
 (defn select-prev-shape
   ([]
@@ -580,21 +587,57 @@
       (let [hover-value (if value #{id} #{})]
         (assoc-in state [:workspace-local :hover] hover-value)))))
 
+(defn- leave-focus-mode
+  "Leaves focus mode, bringing back the viewport and the selection from
+  before it. Shapes removed since then are left out of the selection."
+  [state]
+  (let [objects  (dsh/lookup-page-objects state)
+        local    (:workspace-pre-focus state)
+        selected (:selected local)]
+    (-> state
+        (assoc :workspace-local
+               (cond-> local
+                 (some? selected)
+                 (assoc :selected (into (empty selected) (filter #(contains? objects %)) selected))))
+        (dissoc :workspace-focus-selected)
+        (dissoc :workspace-pre-focus))))
+
 (defn update-focus-shapes
+  "Adds the `added` shapes to the focus set and takes the `removed` ones
+  out. Focus mode ends when no focused shape is left, so a later shape
+  never brings it back on its own."
   [added removed]
-  (ptk/reify ::update-focus-shapes
-    ptk/UpdateEvent
-    (update [_ state]
+  (let [left? (volatile! false)]
+    (ptk/reify ::update-focus-shapes
+      ptk/UpdateEvent
+      (update [_ state]
+        (let [objects (dsh/lookup-page-objects state)
+              current (:workspace-focus-selected state)
+              focus   (-> current
+                          (set/union added)
+                          (set/difference removed))
+              focus   (cfh/clean-loops objects focus)]
+          (cond
+            (empty? current)
+            state
 
-      (let [objects (dsh/lookup-page-objects state)
+            (empty? focus)
+            (do (vreset! left? true)
+                (leave-focus-mode state))
 
-            focus (-> (:workspace-focus-selected state)
-                      (set/union added)
-                      (set/difference removed))
-            focus (cfh/clean-loops objects focus)]
+            :else
+            (assoc state :workspace-focus-selected focus))))
 
-        (-> state
-            (assoc :workspace-focus-selected focus))))))
+      ptk/WatchEvent
+      (watch [_ _ _]
+        (if @left?
+          (rx/of (ptk/data-event ::focus-mode-left))
+          (rx/empty)))
+
+      ptk/EffectEvent
+      (effect [_ state _]
+        (when @left?
+          (dwvw/maybe-sync-workspace-local-viewport! state))))))
 
 (defn toggle-focus-mode
   "Zoom in on and center viewport on selection;
@@ -615,10 +658,7 @@
 
         (if in-mode?
           ;; Exit focus, restoring previous viewport, selection, etc
-          (-> state
-              (assoc :workspace-local (:workspace-pre-focus state))
-              (dissoc :workspace-focus-selected)
-              (dissoc :workspace-pre-focus))
+          (leave-focus-mode state)
           (if have-selection?
             ;; Enter focus and save viewport, selection, etc
             (-> state
@@ -633,6 +673,7 @@
     ptk/WatchEvent
     (watch [_ state stream]
       (let [stopper (rx/filter #(or (= ::toggle-focus-mode (ptk/type %))
+                                    (= ::focus-mode-left (ptk/type %))
                                     (= ::dwpg/finalize-page (ptk/type %))) stream)]
         (when (d/not-empty? (:workspace-focus-selected state))
           (->> (rx/merge

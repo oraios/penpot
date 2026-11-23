@@ -10,6 +10,7 @@
 
      - validate-file-affected   – returns nil or list of errors
      - validate-file-affected!  – same but raises on non-empty errors
+     - validate-file-schema-affected! – schema check of the touched pages
 
    The tests verify the scoping logic implemented by extract-affected-ids
    (tested indirectly) by injecting controlled broken states into specific
@@ -49,6 +50,15 @@
         (fn [page]
           (let [root (ctst/get-shape page uuid/zero)]
             (ctst/set-shape page (update root :shapes conj missing-id)))))))))
+
+(defn- inject-invalid-page
+  "Give the page identified by `page-label` a name that is not a string,
+  so the page fails the file schema check."
+  [file page-label]
+  (ctf/update-file-data
+   file
+   (fn [file-data]
+     (ctpl/update-page file-data (thi/id page-label) #(assoc % :name 42)))))
 
 (defn- inject-broken-component
   "Add a deleted component with `:objects nil` to the file.
@@ -183,6 +193,24 @@
           page1-id (thi/id :page1)
           changes  [{:type :add-page :id page1-id}]]
       (t/is (nil? (cfv/validate-file-affected file' {} changes)))))
+
+  (t/testing "add-page that carries the page alone validates that page"
+    (let [file     (-> (thf/sample-file :file1 :page-label :page1)
+                       (thf/add-sample-page :page2))
+          file'    (inject-broken-child file :page2)
+          page2    (ctpl/get-page (:data file') (thi/id :page2))
+          changes  [{:type :add-page :page page2}]]
+      (let [errors (cfv/validate-file-affected file' {} changes)]
+        (t/is (some #(= :child-not-found (:code %)) errors)))))
+
+  (t/testing "add-page validates the page it stores, not the top-level :id"
+    (let [file     (-> (thf/sample-file :file1 :page-label :page1)
+                       (thf/add-sample-page :page2))
+          file'    (inject-broken-child file :page2)
+          page2    (ctpl/get-page (:data file') (thi/id :page2))
+          changes  [{:type :add-page :id (uuid/next) :page page2}]]
+      (let [errors (cfv/validate-file-affected file' {} changes)]
+        (t/is (some #(= :child-not-found (:code %)) errors)))))
 
   (t/testing "mod-page with :id=page2 validates page2 (broken → errors)"
     (let [file     (-> (thf/sample-file :file1 :page-label :page1)
@@ -447,3 +475,66 @@
             (t/is (= :validation (:type data)))
             (t/is (= :referential-integrity (:code data)))
             (t/is (seq (:details data)))))))))
+
+;; ----------------------------------------------------------------
+;; 11. validate-file-schema-affected! – schema of the touched pages
+;; ----------------------------------------------------------------
+
+(defn- schema-error?
+  [file changes]
+  (try
+    (cfv/validate-file-schema-affected! file changes)
+    false
+    (catch #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo) _
+      true)))
+
+(t/deftest validate-file-schema-affected!-returns-the-file
+  (let [file    (thf/sample-file :file1 :page-label :page1)
+        changes [{:type :mod-obj :page-id (thi/id :page1) :id uuid/zero :operations []}]]
+    (t/is (= file (cfv/validate-file-schema-affected! file changes)))))
+
+(t/deftest validate-file-schema-affected!-checks-touched-pages
+  (let [file (-> (thf/sample-file :file1 :page-label :page1)
+                 (thf/add-sample-page :page2)
+                 (inject-invalid-page :page2))]
+
+    (t/testing "a shape change on the invalid page raises"
+      (t/is (schema-error? file [{:type :mod-obj :page-id (thi/id :page2) :id uuid/zero :operations []}])))
+
+    (t/testing "mod-page on the invalid page raises"
+      (t/is (schema-error? file [{:type :mod-page :id (thi/id :page2) :name "page2"}])))
+
+    (t/testing "page plugin data on the invalid page raises"
+      (t/is (schema-error? file [{:type :set-plugin-data :object-type :page :object-id (thi/id :page2)
+                                  :namespace "ns" :key "k" :value "v"}])))
+
+    (t/testing "a guide on the invalid page raises"
+      (t/is (schema-error? file [{:type :set-guide :page-id (thi/id :page2) :id (uuid/next) :params nil}])))
+
+    (t/testing "add-page checks the page it stores, not the top-level :id"
+      (let [page2 (ctpl/get-page (:data file) (thi/id :page2))]
+        (t/is (schema-error? file [{:type :add-page :id (uuid/next) :page page2}]))))))
+
+(t/deftest validate-file-schema-affected!-skips-untouched-pages
+  (let [file (-> (thf/sample-file :file1 :page-label :page1)
+                 (thf/add-sample-page :page2)
+                 (inject-invalid-page :page2))]
+
+    (t/testing "a shape change on another page does not check the invalid page"
+      (t/is (not (schema-error? file [{:type :mod-obj :page-id (thi/id :page1) :id uuid/zero :operations []}]))))
+
+    (t/testing "a file level change does not check the invalid page"
+      (t/is (not (schema-error? file [{:type :del-color :id (uuid/next)}]))))))
+
+(t/deftest validate-file-schema-affected!-checks-the-rest-of-the-file
+  (let [color-id (uuid/next)
+        file     (-> (thf/sample-file :file1 :page-label :page1)
+                     (ctf/update-file-data #(assoc-in % [:colors color-id] {:id color-id :name 42})))]
+    (t/is (schema-error? file [{:type :mod-obj :page-id (thi/id :page1) :id uuid/zero :operations []}]))))
+
+(t/deftest validate-file-schema-affected!-checks-everything-for-unknown-changes
+  (let [file (-> (thf/sample-file :file1 :page-label :page1)
+                 (thf/add-sample-page :page2)
+                 (inject-invalid-page :page2))]
+    (t/is (schema-error? file [{:type :mod-obj :page-id (thi/id :page1) :id uuid/zero :operations []}
+                               {:type :some-future-change}]))))

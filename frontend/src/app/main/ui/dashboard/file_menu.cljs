@@ -118,10 +118,14 @@
                      {:file-id (:id file)
                       ::rt/new-window true})))
 
+        on-copy-link
+        (fn []
+          (st/emit! (dd/copy-link :workspace {:team-id current-team-id
+                                              :file-id (:id file)})))
+
         on-duplicate
         (fn []
-          (apply st/emit! (map dd/duplicate-file files))
-          (st/emit! (ntf/success (tr "dashboard.success-duplicate-file" (i18n/c file-count)))))
+          (st/emit! (dd/duplicate-files files)))
 
         on-delete-accept
         (fn [_]
@@ -275,6 +279,10 @@
                               :current-team-id current-team-id
                               :on-move on-move}]])
 
+       ;; Without edit rights nothing comes above it.
+       (when can-edit
+         [:> menu-separator*])
+
        [:> menu-item* {:id "file-binary-export-multi" :on-action on-export-binary-files}
         (tr "dashboard.export-binary-multi" file-count)]
 
@@ -310,6 +318,9 @@
                               :other-teams other-teams
                               :current-team-id current-team-id
                               :on-move on-move}]])
+
+       [:> menu-item* {:id "file-copy-link" :on-action on-copy-link}
+        (tr "dashboard.copy-link")]
 
        (when (and (not is-search-page?) can-edit)
          ;; Same id in both branches: :is-shared can flip while this menu

@@ -22,13 +22,21 @@
    [app.http.debug :as-alias http.debug]
    [app.http.link-preview :as-alias http.link-preview]
    [app.http.management :as mgmt]
+   [app.http.mcp-oauth :as-alias http.mcp-oauth]
    [app.http.session :as session]
    [app.http.websocket :as http.ws]
    [app.jobs :as-alias jobs]
    [app.jobs.gc :as-alias jobs.gc]
-   [app.jobs.metrics :as jobs-metrics]
+   ;; The consumer transports live in their own namespaces; requiring them
+   ;; registers their `ig/init-key`/`ig/halt-key!` methods before the
+   ;; worker components start (`ig/load-namespaces` also loads them from
+   ;; the config keys).
+   [app.loggers.audit.consumers.admin-console]
+   [app.loggers.audit.consumers.nexus]
+   [app.loggers.audit.consumers.telemetry]
+   [app.loggers.audit.gc]
    [app.loggers.webhooks :as-alias webhooks]
-   [app.metrics :as-alias mtx]
+   [app.metrics :as mtx]
    [app.metrics.definition :as-alias mdef]
    [app.msgbus :as-alias mbus]
    [app.redis :as-alias rds]
@@ -54,7 +62,13 @@
   (:gen-class))
 
 (def default-metrics
-  {:update-file-changes
+  {:log-events
+   {::mdef/name "penpot_log_events_total"
+    ::mdef/help "Log records at WARN, ERROR and FATAL emitted by the application, by logger and level."
+    ::mdef/labels ["logger" "level"]
+    ::mdef/type :counter}
+
+   :update-file-changes
    {::mdef/name "penpot_rpc_update_file_changes_total"
     ::mdef/help "A total number of changes submitted to update-file."
     ::mdef/type :counter}
@@ -64,16 +78,31 @@
     ::mdef/help "A total number of bytes processed by update-file."
     ::mdef/type :counter}
 
+   :update-file-validation-timing
+   {::mdef/name "penpot_rpc_update_file_validation_timing"
+    ::mdef/help "update-file validation step timings (milliseconds)."
+    ::mdef/labels ["step"]
+    ::mdef/buckets mtx/default-request-histogram-buckets
+    ::mdef/type :histogram}
+
+   :update-file-repair
+   {::mdef/name "penpot_rpc_update_file_repair_total"
+    ::mdef/help "update-file auto-repair attempts by outcome (repaired or unrepaired)."
+    ::mdef/labels ["outcome"]
+    ::mdef/type :counter}
+
    :rpc-main-timing
    {::mdef/name "penpot_rpc_main_timing"
     ::mdef/help "RPC command method call timing for main"
     ::mdef/labels ["name"]
+    ::mdef/buckets mtx/default-request-histogram-buckets
     ::mdef/type :histogram}
 
    :rpc-management-timing
    {::mdef/name "penpot_rpc_management_timing"
     ::mdef/help "RPC command method call timing for management."
     ::mdef/labels ["name"]
+    ::mdef/buckets mtx/default-request-histogram-buckets
     ::mdef/type :histogram}
 
    :websocket-active-connections
@@ -99,19 +128,26 @@
 
    :tasks-timing
    {::mdef/name "penpot_tasks_timing"
-    ;; Deprecated: superseded by `penpot_jobs_execution_ms`, which adds a
-    ;; queue label. Kept only for existing dashboards and alerts. The help
-    ;; text is what someone reading /metrics sees, so it is where the
-    ;; redirect belongs: the name and the labels stay untouched, so no
-    ;; panel or alert breaks.
-    ::mdef/help "Deprecated: use penpot_jobs_execution_ms, which adds a queue label."
+    ;; Deprecated: superseded by `penpot_jobs_execution_ms`. Kept only for
+    ;; existing dashboards and alerts. The help text is what someone reading
+    ;; /metrics sees, so it is where the redirect belongs: the name and the
+    ;; labels stay untouched, so no panel or alert breaks.
+    ::mdef/help "Deprecated: use penpot_jobs_execution_ms. Kept for existing dashboards and alerts."
     ::mdef/labels ["name"]
+    ::mdef/buckets mtx/default-tasks-histogram-buckets
     ::mdef/type :histogram}
+
+   :storage-gc-deleted-objects
+   {::mdef/name "penpot_storage_gc_deleted_objects_total"
+    ::mdef/help "Storage objects permanently deleted by storage-gc-deleted, by backend."
+    ::mdef/labels ["backend"]
+    ::mdef/type :counter}
 
    :redis-eval-timing
    {::mdef/name "penpot_redis_eval_timing"
     ::mdef/help "Redis EVAL commands execution timings (ms)"
     ::mdef/labels ["name"]
+    ::mdef/buckets mtx/default-redis-histogram-buckets
     ::mdef/type :histogram}
 
    :rpc-climit-waiting
@@ -130,6 +166,7 @@
    {::mdef/name "penpot_rpc_climit_timing"
     ::mdef/help "Summary of the time between queuing and executing on the CLIMIT"
     ::mdef/labels ["name"]
+    ::mdef/buckets mtx/default-request-histogram-buckets
     ::mdef/type :histogram}
 
    :audit-http-handler-queue-size
@@ -148,6 +185,7 @@
    {::mdef/name "penpot_audit_http_handler_timing"
     ::mdef/help "Summary of the time between queuing and executing on the audit log http handler"
     ::mdef/labels []
+    ::mdef/buckets mtx/default-request-histogram-buckets
     ::mdef/type :histogram}
 
    :storage-s3-requests
@@ -197,6 +235,7 @@
    {::mdef/name "penpot_http_server_dispatch_timing"
     ::mdef/help "Histogram of dispatch handler"
     ::mdef/labels []
+    ::mdef/buckets mtx/default-request-histogram-buckets
     ::mdef/type :histogram}
 
    :http-worker-queue-size
@@ -229,28 +268,22 @@
     ::mdef/help "Total number of handler errors in the http listener."
     ::mdef/type :counter}
 
-   :jobs-submitted
-   {::mdef/name "penpot_jobs_submitted_total"
-    ::mdef/help "Total number of durable jobs submitted."
-    ::mdef/labels ["name" "queue"]
-    ::mdef/type :counter}
-
-   :jobs-skipped
-   {::mdef/name "penpot_jobs_skipped_total"
-    ::mdef/help "Total number of durable job submissions skipped by skip-if-active."
-    ::mdef/labels ["name" "queue"]
+   :jobs-submit
+   {::mdef/name "penpot_jobs_submit_total"
+    ::mdef/help "Total number of durable job submissions by outcome: created, skipped or refreshed."
+    ::mdef/labels ["name" "outcome"]
     ::mdef/type :counter}
 
    :jobs-dispatched
    {::mdef/name "penpot_jobs_dispatched_total"
-    ::mdef/help "Total number of jobs pushed to a worker queue. Counts pushes, not claims: compare with the _count of penpot_jobs_queue_wait_ms."
-    ::mdef/labels ["name" "queue"]
+    ::mdef/help "Total number of jobs pushed to a worker queue. Counts pushes, not claims: compare with the _count of penpot_jobs_claim_wait_ms."
+    ::mdef/labels ["name"]
     ::mdef/type :counter}
 
    :jobs-retries
    {::mdef/name "penpot_jobs_retries_total"
     ::mdef/help "Total number of durable jobs rescheduled for retry."
-    ::mdef/labels ["name" "queue" "reason"]
+    ::mdef/labels ["name" "reason"]
     ::mdef/type :counter}
 
    :jobs-events-total
@@ -258,41 +291,29 @@
     ::mdef/help "Total number of job events stored."
     ::mdef/type :counter}
 
-   :jobs-orphaned
-   {::mdef/name "penpot_jobs_orphaned_total"
-    ::mdef/help "Total number of running jobs marked as orphaned."
-    ::mdef/labels ["queue"]
-    ::mdef/type :counter}
-
-   :jobs-rescheduled
-   {::mdef/name "penpot_jobs_rescheduled_total"
-    ::mdef/help "Total number of scheduled jobs recovered after transit loss."
-    ::mdef/labels ["queue"]
-    ::mdef/type :counter}
-
-   :jobs-queue-wait-timing
-   {::mdef/name "penpot_jobs_queue_wait_ms"
+   :jobs-claim-wait-timing
+   {::mdef/name "penpot_jobs_claim_wait_ms"
     ::mdef/help "Time from job scheduling to worker claim (milliseconds). Its _count counts claims, not pushes: compare with penpot_jobs_dispatched_total."
-    ::mdef/labels ["name" "queue"]
+    ::mdef/labels ["name"]
     ::mdef/type :histogram
     ::mdef/buckets [1 10 50 100 500 1000 5000 10000 30000 60000 300000 600000]}
 
    :jobs-execution-timing
    {::mdef/name "penpot_jobs_execution_ms"
     ::mdef/help "Time spent executing a job handler (milliseconds)."
-    ::mdef/labels ["name" "queue"]
+    ::mdef/labels ["name"]
     ::mdef/type :histogram
     ::mdef/buckets [1 10 50 100 500 1000 5000 10000 30000 60000 300000 600000]}
 
    :jobs-total-timing
    {::mdef/name "penpot_jobs_total_ms"
     ::mdef/help "Time from job creation to a terminal state (milliseconds). Its _count is the terminal total per outcome."
-    ::mdef/labels ["name" "queue" "outcome"]
+    ::mdef/labels ["name" "outcome"]
     ::mdef/type :histogram
     ::mdef/buckets [10 50 100 500 1000 5000 10000 30000 60000 300000 600000 3600000]}
 
-   :jobs-dispatcher-timing
-   {::mdef/name "penpot_jobs_dispatcher_ms"
+   :jobs-dispatcher-batch-timing
+   {::mdef/name "penpot_jobs_dispatcher_batch_ms"
     ::mdef/help "Dispatcher batch processing time (milliseconds)."
     ::mdef/labels ["stage" "outcome"]
     ::mdef/type :histogram
@@ -305,25 +326,14 @@
     ::mdef/type :histogram
     ::mdef/buckets [1 5 10 25 50 100 250 500 1000]}
 
-   :jobs-backlog
-   {::mdef/name "penpot_jobs_backlog"
-    ::mdef/help "Current number of jobs grouped by status."
-    ::mdef/labels ["status"]
-    ::mdef/type :gauge}
-
-   :jobs-oldest-pending-age
-   {::mdef/name "penpot_jobs_oldest_pending_age_seconds"
-    ::mdef/help "Age in seconds of the oldest pending job."
-    ::mdef/type :gauge}
-
    :jobs-gc-rows
    {::mdef/name "penpot_jobs_gc_rows_total"
     ::mdef/help "Rows removed or resources touched by the jobs garbage collector."
     ::mdef/labels ["kind" "action"]
     ::mdef/type :counter}
 
-   :jobs-gc-timing
-   {::mdef/name "penpot_jobs_gc_ms"
+   :jobs-gc-pass-timing
+   {::mdef/name "penpot_jobs_gc_pass_ms"
     ::mdef/help "Time spent in each jobs garbage collection pass (milliseconds)."
     ::mdef/labels ["kind"]
     ::mdef/type :histogram
@@ -340,6 +350,60 @@
     ::mdef/help "Time spent waiting for an ephemeral job reply (milliseconds). Its _count is the request total per outcome."
     ::mdef/labels ["outcome"]
     ::mdef/type :histogram
+    ::mdef/buckets [1 10 50 100 500 1000 5000 10000 30000 60000 300000]}
+
+   :http-malformed-requests-total
+   {::mdef/name "penpot_http_malformed_requests_total"
+    ::mdef/help "Total number of requests whose body the parser could not read."
+    ::mdef/type :counter}
+
+   :audit-consumer-events
+   {::mdef/name "penpot_audit_consumer_events_total"
+    ::mdef/help "Audit log events drained by the audit-log consumers, by destination and outcome."
+    ::mdef/labels ["destination" "outcome"]
+    ::mdef/type :counter}
+
+   :audit-consumer-passes
+   {::mdef/name "penpot_audit_consumer_passes_total"
+    ::mdef/help "Audit log consumer passes, by destination and outcome."
+    ::mdef/labels ["destination" "outcome"]
+    ::mdef/type :counter}
+
+   :audit-consumer-discarded
+   {::mdef/name "penpot_audit_consumer_discarded_total"
+    ::mdef/help "Audit log entries removed from the buffer by the GC, by reason."
+    ::mdef/labels ["reason"]
+    ::mdef/type :counter}
+
+   :audit-consumer-lag
+   {::mdef/name "penpot_audit_consumer_lag_events"
+    ::mdef/help "Audit log events confirmed in the buffer that a consumer has not processed yet (capped at 10000)."
+    ::mdef/labels ["destination"]
+    ::mdef/type :gauge}
+
+   :audit-ingest-events
+   {::mdef/name "penpot_audit_ingest_events_total"
+    ::mdef/help "Audit log frontend events ingested, by kind and outcome."
+    ::mdef/labels ["kind" "outcome"]
+    ::mdef/type :counter}
+
+   :file-data-offload-rows
+   {::mdef/name "penpot_file_data_offload_rows_total"
+    ::mdef/help "File data rows moved from hot to cold storage by the offload job."
+    ::mdef/labels ["type"]
+    ::mdef/type :counter}
+
+   :file-data-offload-bytes
+   {::mdef/name "penpot_file_data_offload_bytes_total"
+    ::mdef/help "File data bytes moved from hot to cold storage by the offload job."
+    ::mdef/labels ["type"]
+    ::mdef/type :counter}
+
+   :file-data-offload-timing
+   {::mdef/name "penpot_file_data_offload_timing_ms"
+    ::mdef/help "Time spent offloading one file from hot to cold storage (milliseconds)."
+    ::mdef/labels ["result"]
+    ::mdef/type :histogram
     ::mdef/buckets [1 10 50 100 500 1000 5000 10000 30000 60000 300000]}})
 
 (def system-config
@@ -350,6 +414,9 @@
     ::db/read-only  (cf/get :database-readonly false)
     ::db/min-size   (cf/get :database-min-pool-size)
     ::db/max-size   (cf/get :database-max-pool-size)
+    ::db/prepared-statement-cache-threshold (cf/get :database-prepared-statement-cache-threshold)
+    ::db/prepared-statement-cache-queries   (cf/get :database-prepared-statement-cache-queries)
+    ::db/prepared-statement-cache-size      (cf/get :database-prepared-statement-cache-size)
     ::mtx/metrics   (ig/ref ::mtx/metrics)}
 
    ;; Default netty IO pool (shared between several services)
@@ -460,13 +527,22 @@
     ::rpc/routes         (ig/ref ::rpc/routes)
     ::setup/props        (ig/ref ::setup/props)
     ::mtx/routes         (ig/ref ::mtx/routes)
+    ::mtx/metrics        (ig/ref ::mtx/metrics)
     ::oidc/routes        (ig/ref ::oidc/routes)
     ::mgmt/routes        (ig/ref ::mgmt/routes)
     ::http.debug/routes  (ig/ref ::http.debug/routes)
     ::http.assets/routes (ig/ref ::http.assets/routes)
     ::http.link-preview/routes (ig/ref ::http.link-preview/routes)
+    ::http.mcp-oauth/routes (ig/ref ::http.mcp-oauth/routes)
     ::http.ws/routes     (ig/ref ::http.ws/routes)
     ::http.awsns/routes  (ig/ref ::http.awsns/routes)}
+
+   ::http.mcp-oauth/routes
+   {::db/pool (ig/ref ::db/pool)
+    ::rds/pool (ig/ref ::rds/pool)
+    ::setup/props (ig/ref ::setup/props)
+    ::session/manager (ig/ref ::session/manager)
+    ::http.client/client (ig/ref ::http.client/client)}
 
    ::http.link-preview/routes
    {::db/pool         (ig/ref ::db/pool)}
@@ -485,6 +561,11 @@
     ::mbus/msgbus       (ig/ref ::mbus/msgbus)
     ::setup/props       (ig/ref ::setup/props)
     ::session/manager   (ig/ref ::session/manager)
+    :app.nitrate/client (ig/ref :app.nitrate/client)}
+
+   ::http.ws/revocation-watcher
+   {::db/pool           (ig/ref ::db/pool)
+    ::mbus/msgbus       (ig/ref ::mbus/msgbus)
     :app.nitrate/client (ig/ref :app.nitrate/client)}
 
    :app.http.assets/routes
@@ -543,8 +624,7 @@
 
    :app.nitrate/client
    {::http.client/client (ig/ref ::http.client/client)
-    ;; No ::jobs/defs: nitrate never submits jobs, and archive-task's
-    ;; job-def needs this client — that would cycle through jobs/defs.
+    ;; No ::jobs/defs: nitrate never submits jobs.
     ::setup/shared-keys  (ig/ref ::setup/shared-keys)}
 
    :app.rpc/management-methods
@@ -573,6 +653,7 @@
 
    ::jobs/defs
    {:sendmail              (ig/ref ::email/job-def)
+    :send-templated-mail   (ig/ref ::email/templated-job-def)
     :delete-object         (ig/ref :app.tasks.delete-object/job-def)
     :demo-purge            (ig/ref :app.tasks.demo-purge/job-def)
     :run-webhook           (ig/ref ::webhooks/run-webhook-job-def)
@@ -589,14 +670,17 @@
     :telemetry             (ig/ref :app.tasks.telemetry/job-def)
     :session-gc            (ig/ref ::session/job-def)
     :file-gc-scheduler     (ig/ref :app.tasks.file-gc-scheduler/job-def)
-    :audit-log-archive     (ig/ref :app.loggers.audit.archive-task/job-def)
-    :audit-log-gc          (ig/ref :app.loggers.audit.gc-task/job-def)}
+    :audit-log-gc          (ig/ref :app.loggers.audit.gc/job-def)}
 
    ::jobs/request-pool
    {::rds/client  (ig/ref ::rds/client)
     ::mtx/metrics (ig/ref ::mtx/metrics)}
 
    :app.email/job-def
+   {::email/sendmail (ig/ref ::email/sendmail)
+    ::mtx/metrics   (ig/ref ::mtx/metrics)}
+
+   :app.email/templated-job-def
    {::email/sendmail (ig/ref ::email/sendmail)
     ::mtx/metrics   (ig/ref ::mtx/metrics)}
 
@@ -679,14 +763,7 @@
    {::db/pool     (ig/ref ::db/pool)
     ::mtx/metrics (ig/ref ::mtx/metrics)}
 
-   :app.loggers.audit.archive-task/job-def
-   {::db/pool            (ig/ref ::db/pool)
-    ::http.client/client (ig/ref ::http.client/client)
-    ::setup/shared-keys  (ig/ref ::setup/shared-keys)
-    :app.nitrate/client  (ig/ref :app.nitrate/client)
-    ::mtx/metrics        (ig/ref ::mtx/metrics)}
-
-   :app.loggers.audit.gc-task/job-def
+   :app.loggers.audit.gc/job-def
    {::db/pool     (ig/ref ::db/pool)
     ::mtx/metrics (ig/ref ::mtx/metrics)}
 
@@ -745,6 +822,9 @@
    :app.loggers.database/reporter
    {::db/pool (ig/ref ::db/pool)}
 
+   :app.loggers.metrics/reporter
+   {::mtx/metrics (ig/ref ::mtx/metrics)}
+
    ::sto/storage
    {::db/pool      (ig/ref ::db/pool)
     ::mtx/metrics  (ig/ref ::mtx/metrics)
@@ -776,55 +856,52 @@
    {::sto.fs/directory (or (cf/get :storage-assets-fs-directory)
                            (cf/get :objects-storage-fs-directory))}})
 
+(defn worker-cron-entries
+  "Cron entries of the worker. The audit-log GC is a separate switch: the
+  old and the new version share `:audit-log-gc`, so keeping it off during
+  the rollout stops both until the consumers are the only readers."
+  []
+  (into [] (remove nil?)
+        [{:cron #penpot/cron "0 0 0 * * ?" ;; daily
+          :job :session-gc}
+
+         {:cron #penpot/cron "0 0 0 * * ?" ;; daily
+          :job :objects-gc}
+
+         {:cron #penpot/cron "0 0 0 * * ?" ;; daily
+          :job :storage-gc-deleted}
+
+         {:cron #penpot/cron "0 0 0 * * ?" ;; daily
+          :job :storage-gc-touched}
+
+         {:cron #penpot/cron "0 0 0 * * ?" ;; daily
+          :job :storage-pending-gc}
+
+         {:cron #penpot/cron "0 0 0 * * ?" ;; daily
+          :job :jobs-gc}
+
+         {:cron #penpot/cron "0 0 2 * * ?" ;; daily
+          :job :file-gc-scheduler}
+
+         {:cron #penpot/cron "0 30 */3,23 * * ?"
+          :job :telemetry}
+
+         (when (contains? cf/flags :audit-log-gc)
+           {:cron #penpot/cron "45 */5 * * * ?" ;; every 5m
+            :job :audit-log-gc})]))
+
 (def worker-config
   {::wrk/cron
    {::jobs/defs               (ig/ref ::jobs/defs)
     ::db/pool                 (ig/ref ::db/pool)
     ::mtx/metrics             (ig/ref ::mtx/metrics)
-    ::wrk/entries
-    [{:cron #penpot/cron "0 0 0 * * ?" ;; daily
-      :job :session-gc}
-
-     {:cron #penpot/cron "0 0 0 * * ?" ;; daily
-      :job :objects-gc}
-
-     {:cron #penpot/cron "0 0 0 * * ?" ;; daily
-      :job :storage-gc-deleted}
-
-     {:cron #penpot/cron "0 0 0 * * ?" ;; daily
-      :job :storage-gc-touched}
-
-     {:cron #penpot/cron "0 0 0 * * ?" ;; daily
-      :job :storage-pending-gc}
-
-     {:cron #penpot/cron "0 0 0 * * ?" ;; daily
-      :job :jobs-gc}
-
-     {:cron #penpot/cron "0 0 2 * * ?" ;; daily
-      :job :file-gc-scheduler}
-
-     {:cron #penpot/cron "0 30 */3,23 * * ?"
-      :job :telemetry}
-
-     (when (or (contains? cf/flags :nexus)
-               (contains? cf/flags :admin-console))
-       {:cron #penpot/cron "0 */5 * * * ?" ;; every 5m
-        :job :audit-log-archive})
-
-     (when (or (contains? cf/flags :nexus)
-               (contains? cf/flags :admin-console))
-       {:cron #penpot/cron "30 */5 * * * ?" ;; every 5m
-        :job :audit-log-gc})]}
+    ::wrk/entries             (worker-cron-entries)}
 
    ::wrk/dispatcher
    {::rds/client  (ig/ref ::rds/client)
     ::mtx/metrics (ig/ref ::mtx/metrics)
     ::db/pool     (ig/ref ::db/pool)
     ::wrk/tenant  (cf/get :tenant)}
-
-   ::jobs-metrics/sampler
-   {::db/pool     (ig/ref ::db/pool)
-    ::mtx/metrics (ig/ref ::mtx/metrics)}
 
    [::default ::wrk/runner]
    {::wrk/parallelism (cf/get :worker-default-parallelism 1)
@@ -865,7 +942,27 @@
     ::jobs/defs       (ig/ref ::jobs/defs)
     ::mtx/metrics     (ig/ref ::mtx/metrics)
     ::db/pool         (ig/ref ::db/pool)
-    ::mbus/msgbus     (ig/ref ::mbus/msgbus)}})
+    ::mbus/msgbus     (ig/ref ::mbus/msgbus)}
+
+   ;; The audit-log consumers are loops, not jobs: each one starts a
+   ;; thread that takes its tick lock, drains up to the frontier of the
+   ;; pass and sleeps. Only worker instances run them.
+   :app.loggers.audit.consumers.nexus/consumer
+   {::db/pool            (ig/ref ::db/pool)
+    ::http.client/client (ig/ref ::http.client/client)
+    ::setup/shared-keys  (ig/ref ::setup/shared-keys)
+    ::mtx/metrics        (ig/ref ::mtx/metrics)}
+
+   :app.loggers.audit.consumers.admin-console/consumer
+   {::db/pool            (ig/ref ::db/pool)
+    :app.nitrate/client  (ig/ref :app.nitrate/client)
+    ::mtx/metrics        (ig/ref ::mtx/metrics)}
+
+   :app.loggers.audit.consumers.telemetry/consumer
+   {::db/pool            (ig/ref ::db/pool)
+    ::http.client/client (ig/ref ::http.client/client)
+    ::setup/props        (ig/ref ::setup/props)
+    ::mtx/metrics        (ig/ref ::mtx/metrics)}})
 
 
 (defn start

@@ -9,19 +9,24 @@
    [app.common.features :as ffeat]
    [app.common.files.changes :as ch]
    [app.common.files.changes-builder :as pcb]
+   [app.common.files.changes-merge :as mch]
+   [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
    [app.common.geom.shapes :as gsh]
+   [app.common.math :as mth]
    [app.common.schema :as sm]
    [app.common.schema.generators :as sg]
    [app.common.schema.test :as smt]
    [app.common.time :as ct]
    [app.common.types.file :as ctf]
+   [app.common.types.page :as ctp]
    [app.common.types.shape :as cts]
    [app.common.types.tokens-lib :as ctob]
    [app.common.types.tokens-status :as ctos]
    [app.common.types.typography :as ctt]
    [app.common.uuid :as uuid]
    [clojure.datafy :refer [datafy]]
+   [clojure.set :as set]
    [clojure.test :as t]
    [clojure.walk :as walk]
    [common-tests.types.shape-decode-encode-test :refer [json-roundtrip]]))
@@ -46,6 +51,19 @@
          (dissoc value :modified-at)
          value)))
    data))
+
+(t/deftest add-page-uses-the-page-id-for-redo-and-undo
+  (let [data    (make-file-data (uuid/next) (uuid/next))
+        page-id (uuid/next)
+        page    (ctp/make-empty-page {:id page-id :name "Duplicate"})
+        changes (pcb/add-page (pcb/empty-changes nil) page)
+        added   (ch/process-changes data (:redo-changes changes))
+        undone  (ch/process-changes added (:undo-changes changes))]
+    (t/is (= [{:type :add-page :id page-id :page page}]
+             (:redo-changes changes)))
+    (t/is (= page (get-in added [:pages-index page-id])))
+    (t/is (= (:pages data) (:pages undone)))
+    (t/is (= (:pages-index data) (:pages-index undone)))))
 
 (defn- assert-idempotent
   [data changes]
@@ -118,6 +136,93 @@
                :operations [{:type :assign :value {:name "Renamed"}}]}]]]
       (t/testing label
         (assert-idempotent data [change])))))
+
+(defn- make-deleted-component
+  "File data with a deleted component, so it keeps the shapes of its main
+   instance inside its own `:objects` map. Returns the file data and the ids
+   needed to address those shapes."
+  []
+  (let [file-id      (uuid/custom 20 1)
+        page-id      (uuid/custom 20 2)
+        main-id      (uuid/custom 20 3)
+        child-id     (uuid/custom 20 4)
+        component-id (uuid/custom 20 5)
+        data         (-> (make-file-data file-id page-id)
+                         (ch/process-changes
+                          [{:type :add-obj
+                            :id main-id :page-id page-id :frame-id uuid/zero
+                            :obj (cts/setup-shape
+                                  {:id main-id :type :frame :name "Main"
+                                   :frame-id uuid/zero :parent-id uuid/zero
+                                   :component-id component-id :component-file file-id
+                                   :main-instance true :component-root true})}
+                           {:type :add-obj
+                            :id child-id :page-id page-id :frame-id main-id :parent-id main-id
+                            :obj (cts/setup-shape
+                                  {:id child-id :type :rect :name "Child"
+                                   :frame-id main-id :parent-id main-id
+                                   :x 0 :y 0 :width 10 :height 10})}
+                           {:type :add-component
+                            :id component-id :name "Component" :path ""
+                            :main-instance-id main-id :main-instance-page page-id}
+                           {:type :del-component :id component-id}]))]
+    {:data data
+     :page-id page-id
+     :main-id main-id
+     :child-id child-id
+     :component-id component-id}))
+
+(t/deftest update-component-does-not-carry-the-objects-map
+  (let [{:keys [data component-id]} (make-deleted-component)
+        changes (pcb/update-component (pcb/with-library-data (pcb/empty-changes nil) data)
+                                      component-id
+                                      #(assoc % :name "Renamed"))
+        change  (first (:redo-changes changes))]
+
+    (t/testing "the change carries component metadata only"
+      (t/is (= :mod-component (:type change)))
+      (t/is (= "Renamed" (:name change)))
+      (t/is (not (contains? change :objects))
+            "resending the whole objects map on every touch is what bloated the changes")
+      (t/is (not (contains? (first (:undo-changes changes)) :objects))))
+
+    (t/testing "applying the change keeps the component shapes"
+      (let [data' (ch/process-changes data (:redo-changes changes))]
+        (t/is (= 2 (count (get-in data' [:components component-id :objects]))))))))
+
+(t/deftest mod-component-touches-objects-only-when-it-carries-them
+  (let [{:keys [data component-id]} (make-deleted-component)
+        objects (:objects (get-in data [:components component-id]))]
+
+    (t/testing "a change without :objects leaves the stored shapes alone"
+      (let [data' (ch/process-changes data [{:type :mod-component
+                                             :id component-id :name "Renamed"}])]
+        (t/is (= objects (get-in data' [:components component-id :objects])))))
+
+    (t/testing "an explicit nil :objects drops them"
+      (let [data' (ch/process-changes data [{:type :mod-component
+                                             :id component-id :objects nil}])]
+        (t/is (not (contains? (get-in data' [:components component-id]) :objects)))))
+
+    (t/testing "a change with :objects replaces them"
+      (let [data' (ch/process-changes data [{:type :mod-component
+                                             :id component-id :objects {}}])]
+        (t/is (= {} (get-in data' [:components component-id :objects])))))))
+
+(t/deftest shape-change-scoped-to-a-component-matches-the-whole-map-change
+  (let [{:keys [data child-id component-id]} (make-deleted-component)
+        objects (:objects (get-in data [:components component-id]))
+        scoped-change {:type :mod-obj
+                       :component-id component-id :id child-id
+                       :operations [{:type :set :attr :name :val "Renamed"}]}
+        ;; what `update-component` used to emit: the whole objects map rewritten
+        whole-map-change {:type :mod-component
+                          :id component-id
+                          :objects (assoc objects child-id
+                                          (assoc (get objects child-id) :name "Renamed"))}]
+
+    (t/is (= (without-modified-at (ch/process-changes data [whole-map-change]))
+             (without-modified-at (ch/process-changes data [scoped-change]))))))
 
 (t/deftest token-changes-are-idempotent
   (let [set-id      (uuid/custom 20 1)
@@ -250,6 +355,185 @@
                                 [:x :y :width :height]))
                 "The parent must use the updated bounds of both children")
           (assert-idempotent data changes))))))
+
+(defn- make-nested-groups
+  "Two pages, each with a group holding a group that holds a rect."
+  []
+  (let [page-a   (uuid/custom 41 1)
+        page-b   (uuid/custom 41 2)
+        outer-a  (uuid/custom 41 3)
+        inner-a  (uuid/custom 41 4)
+        rect-a   (uuid/custom 41 5)
+        outer-b  (uuid/custom 41 6)
+        inner-b  (uuid/custom 41 7)
+        rect-b   (uuid/custom 41 8)]
+
+    {:page-a page-a :page-b page-b
+     :outer-a outer-a :inner-a inner-a :rect-a rect-a
+     :outer-b outer-b :inner-b inner-b :rect-b rect-b
+     :data (ch/process-changes
+            (make-file-data (uuid/custom 41 9) page-a)
+            (into [{:type :add-page :id page-b
+                    :page (ctp/make-empty-page {:id page-b :name "page-b"})}]
+                  (map (fn [[id page-id parent-id type]]
+                         {:type :add-obj :id id :page-id page-id
+                          :frame-id uuid/zero :parent-id parent-id
+                          :obj (cts/setup-shape
+                                {:id id :type type :name (name type)
+                                 :frame-id uuid/zero :parent-id parent-id
+                                 :x 0 :y 0 :width 10 :height 10})})
+                       [[outer-a page-a uuid/zero :group]
+                        [inner-a page-a outer-a :group]
+                        [rect-a page-a inner-a :rect]
+                        [outer-b page-b uuid/zero :group]
+                        [inner-b page-b outer-b :group]
+                        [rect-b page-b inner-b :rect]])))}))
+
+(defn- resize-rect
+  "The changes the component sync emits after resizing a rect: the new geometry
+  followed by a `:reg-objects` for the rect's parents, plus the inverse pair.
+  `parents` is `[inner-id outer-id]`, the groups above the rect."
+  [data page-id rect-id parents dx]
+  (let [shape (get-in data [:pages-index page-id :objects rect-id])
+        moved (gsh/move shape (gpt/point dx 0))
+        redo  [{:type :mod-obj :id rect-id :page-id page-id
+                :operations (mapv (fn [[attr val]] {:type :set :attr attr :val val})
+                                  (select-keys moved [:x :y :selrect :points]))}
+               {:type :reg-objects :page-id page-id :shapes parents}]]
+    {:redo redo
+     ;; The inverse: the shape back to its previous geometry, then the same
+     ;; `reg-objects` so the groups shrink with it.
+     :undo (list* {:type :mod-obj :id rect-id :page-id page-id
+                   :operations (mapv (fn [op]
+                                       {:type :set :attr (:attr op)
+                                        :val (get shape (:attr op))})
+                                     (:operations (first redo)))}
+                  [(second redo)])}))
+
+(defn- move-rect-changes [data page-id rect-id parents dx]
+  (:redo (resize-rect data page-id rect-id parents dx)))
+
+(t/deftest merge-reg-objects-collapses-per-container
+  (t/testing "one change per container, with the union of the shapes"
+    (let [{:keys [data page-a rect-a inner-a outer-a]} (make-nested-groups)
+          parents [inner-a outer-a]
+          batch  (concat (move-rect-changes data page-a rect-a parents 100)
+                         (move-rect-changes data page-a rect-a parents 50))
+          merged (mch/merge-reg-objects batch)
+          regs   (filterv #(= :reg-objects (:type %)) merged)]
+
+      (t/is (= 1 (count regs))
+            "both reg-objects of the same container collapse into one")
+      (t/is (= page-a (:page-id (first regs))))
+      (t/is (= #{inner-a outer-a} (set (:shapes (first regs))))
+            "the merged change carries every shape, no duplicates")
+      (t/is (= (- (count batch) 1) (count merged))
+            "only the redundant reg-objects disappear, everything else is kept")
+      (t/is (= (count (remove #(= :reg-objects (:type %)) batch))
+               (count (remove #(= :reg-objects (:type %)) merged)))
+            "non reg-objects changes keep their order and count")))
+
+  (t/testing "the merged change goes last, so groups see the final children"
+    (let [{:keys [data page-a rect-a inner-a outer-a]} (make-nested-groups)
+          batch  (vec (move-rect-changes data page-a rect-a [inner-a outer-a] 100))
+          merged (mch/merge-reg-objects batch)]
+      (t/is (= :reg-objects (:type (last merged)))
+            "a group recomputed before its child resized keeps a stale selrect")))
+
+  (t/testing "batches without reg-objects are returned untouched"
+    (let [batch [{:type :mod-obj :id (uuid/custom 41 5) :page-id (uuid/custom 41 1)
+                  :operations [{:type :set :attr :name :val "x"}]}]]
+      (t/is (= batch (mch/merge-reg-objects batch)))))
+
+  (t/testing "a batch with a single reg-objects keeps one change"
+    (let [{:keys [data page-a rect-a inner-a outer-a]} (make-nested-groups)
+          batch (vec (move-rect-changes data page-a rect-a [inner-a outer-a] 100))
+          merged (mch/merge-reg-objects batch)]
+      (t/is (= 1 (count (filter #(= :reg-objects (:type %)) merged))))
+      (t/is (= (count batch) (count merged))))))
+
+(t/deftest merge-reg-objects-is-equivalent-to-the-separate-changes
+  (let [{:keys [data page-a page-b inner-a outer-a inner-b outer-b
+                rect-a rect-b]} (make-nested-groups)
+        ;; Two pages, and on one of them a second resize that lands after the
+        ;; first reg-objects: the case where position matters.
+        batch (vec (concat (move-rect-changes data page-a rect-a [inner-a outer-a] 100)
+                           (move-rect-changes data page-b rect-b [inner-b outer-b] 100)
+                           (move-rect-changes data page-a rect-a [inner-a outer-a] 50)))
+        merged (mch/merge-reg-objects batch)
+        result-separate (with-redefs [ct/now (constantly (ct/inst 1000))]
+                          (ch/process-changes data batch))
+        result-merged   (with-redefs [ct/now (constantly (ct/inst 1000))]
+                          (ch/process-changes data merged))]
+
+    (t/testing "two of the three reg-objects collapse, one per container"
+      (t/is (= 2 (count (filter #(= :reg-objects (:type %)) merged))))
+      (t/is (= (- (count batch) 1) (count merged))))
+
+    (t/testing "applying the merged batch matches applying them one by one"
+      (t/is (= (without-modified-at result-separate)
+               (without-modified-at result-merged))
+            "fusing reg-objects must not move any group to a stale geometry"))
+
+    (t/testing "the group ends up wrapping the last resize"
+      ;; Both resizes are computed from the same base data, so the second one
+      ;; wins: the rect lands at x=50 and the group must wrap it there.
+      (t/is (= {:x 50 :y 0 :width 10 :height 10}
+               (update-vals (select-keys (get-in result-merged
+                                                 [:pages-index page-a :objects outer-a])
+                                         [:x :y :width :height])
+                            #(long (mth/round %))))
+            "a group left at the first reg-objects would still wrap x=0"))
+
+    (t/testing "the merged batch is still a valid change batch"
+      (t/is (ch/check-changes merged))
+      (t/is (ch/check-changes batch)
+            "sanity: the original batch validates too"))))
+
+(t/deftest merge-reg-objects-works-on-undo-changes
+  (t/testing "undo-changes are a list and merge like redo-changes"
+    (let [{:keys [data page-a page-b rect-a rect-b inner-a outer-a inner-b outer-b]}
+          (make-nested-groups)
+          resize-a1 (resize-rect data page-a rect-a [inner-a outer-a] 100)
+          resize-a2 (resize-rect data page-a rect-a [inner-a outer-a] 50)
+          resize-b  (resize-rect data page-b rect-b [inner-b outer-b] 100)
+
+          ;; Undo entry for three resizes: every `reg-objects` behind its shape
+          ;; change, two of them on the same page, which is what merging is for.
+          undo (apply list (concat (:undo resize-a1)
+                                   (:undo resize-a2)
+                                   (:undo resize-b)))
+
+          after (ch/process-changes data (vec (concat (:redo resize-a1)
+                                                      (:redo resize-a2)
+                                                      (:redo resize-b))))
+          merged (mch/merge-reg-objects undo)
+          undone-separate (with-redefs [ct/now (constantly (ct/inst 1000))]
+                            (ch/process-changes after undo))
+          undone-merged   (with-redefs [ct/now (constantly (ct/inst 1000))]
+                            (ch/process-changes after merged))]
+
+      (t/is (list? undo)
+            "the builder hands undo-changes over as a list")
+      (t/is (= 6 (count undo)))
+      (t/is (= 3 (count (filter #(= :reg-objects (:type %)) undo))))
+
+      (t/testing "the three reg-objects collapse to one per container"
+        (t/is (= 5 (count merged)))
+        (t/is (= 2 (count (filter #(= :reg-objects (:type %)) merged))))
+        (t/is (= :reg-objects (:type (last merged)))
+              "the group must be recomputed after the child is back in place"))
+
+      (t/testing "undoing gives the same result merged or not"
+        (t/is (= (without-modified-at undone-separate)
+                 (without-modified-at undone-merged))))
+
+      (t/testing "and the groups shrink back with their children"
+        (doseq [[page-id outer-id] [[page-a outer-a] [page-b outer-b]]]
+          (t/is (= {:x 0.0 :y 0.0 :width 10.0 :height 10.0}
+                   (select-keys (get-in undone-merged [:pages-index page-id :objects outer-id])
+                                [:x :y :width :height]))
+                "a group recomputed before the child was restored keeps a stale selrect"))))))
 
 (t/deftest add-obj
   (let [file-id (uuid/custom 2 2)
@@ -1165,3 +1449,138 @@
               (nil? (get-in result2 [:pages-index page-id :default-grids])))))
 
      {:num 1000})))
+
+;; --- Candidate object ids
+
+(defn- add-shape-change
+  [page-id [id parent-id frame-id type]]
+  {:type :add-obj :id id :page-id page-id
+   :frame-id frame-id :parent-id parent-id
+   :obj (cts/setup-shape
+         {:id id :type type :name (name type)
+          :frame-id frame-id :parent-id parent-id
+          :x 0 :y 0 :width 10 :height 10})})
+
+(defn- make-tree-data
+  "A board with a group of two rects, a rect at the root, and two nested
+  groups around a rect."
+  [page-id ids]
+  (ch/process-changes
+   (make-file-data (uuid/custom 40 99) page-id)
+   (mapv (partial add-shape-change page-id)
+         [[(ids :board)  uuid/zero    uuid/zero    :frame]
+          [(ids :group)  (ids :board) (ids :board) :group]
+          [(ids :rect-a) (ids :group) (ids :board) :rect]
+          [(ids :rect-b) (ids :group) (ids :board) :rect]
+          [(ids :rect-c) uuid/zero    uuid/zero    :rect]
+          [(ids :outer)  uuid/zero    uuid/zero    :group]
+          [(ids :inner)  (ids :outer) uuid/zero    :group]
+          [(ids :rect-d) (ids :inner) uuid/zero    :rect]])))
+
+(def ^:private tree-ids
+  (zipmap [:board :group :rect-a :rect-b :rect-c :outer :inner :rect-d :new]
+          (map #(uuid/custom 40 %) (range 1 10))))
+
+(defn- get-changed-ids
+  [old-objects new-objects]
+  (into #{}
+        (filter #(not= (get old-objects %) (get new-objects %)))
+        (set/union (set (keys old-objects)) (set (keys new-objects)))))
+
+(defn- apply-and-get-candidates
+  "Applies `changes`, checks that the candidates cover every changed id,
+  and returns the candidates."
+  [data page-id changes]
+  (let [old-objects (get-in data [:pages-index page-id :objects])
+        result      (ch/process-changes data changes)
+        new-objects (get-in result [:pages-index page-id :objects])
+        candidates  (ch/get-candidate-object-ids old-objects new-objects page-id changes)]
+    (t/is (set/subset? (get-changed-ids old-objects new-objects) candidates)
+          "Every changed object must be a candidate")
+    candidates))
+
+(t/deftest candidate-ids-of-added-shapes
+  (let [page-id (uuid/custom 40 100)
+        ids     tree-ids
+        data    (make-tree-data page-id ids)]
+    (t/testing "A shape added at the root gives the shape and the root"
+      (t/is (= #{(ids :new) uuid/zero}
+               (apply-and-get-candidates
+                data page-id
+                [(add-shape-change page-id [(ids :new) uuid/zero uuid/zero :rect])]))))
+    (t/testing "A shape added inside a board gives the shape and the board"
+      (t/is (= #{(ids :new) (ids :board)}
+               (apply-and-get-candidates
+                data page-id
+                [(add-shape-change page-id [(ids :new) (ids :board) (ids :board) :rect])]))))))
+
+(t/deftest candidate-ids-of-modified-shape
+  (let [page-id (uuid/custom 40 100)
+        ids     tree-ids
+        data    (make-tree-data page-id ids)]
+    (t/is (= #{(ids :rect-a)}
+             (apply-and-get-candidates
+              data page-id
+              [{:type :mod-obj :id (ids :rect-a) :page-id page-id
+                :operations [{:type :set :attr :name :val "renamed"}]}])))))
+
+(t/deftest candidate-ids-of-deleted-group
+  (let [page-id    (uuid/custom 40 100)
+        ids        tree-ids
+        data       (make-tree-data page-id ids)
+        candidates (apply-and-get-candidates
+                    data page-id
+                    [{:type :del-obj :id (ids :group) :page-id page-id}])]
+    (t/is (set/subset? #{(ids :group) (ids :rect-a) (ids :rect-b) (ids :board)}
+                       candidates))))
+
+(t/deftest candidate-ids-of-moved-group
+  (let [page-id    (uuid/custom 40 100)
+        ids        tree-ids
+        data       (make-tree-data page-id ids)
+        candidates (apply-and-get-candidates
+                    data page-id
+                    [{:type :mov-objects :page-id page-id
+                      :parent-id (ids :board) :shapes [(ids :outer)]}])]
+    (t/is (set/subset? #{(ids :outer) (ids :inner) (ids :rect-d) (ids :board) uuid/zero}
+                       candidates))))
+
+(t/deftest candidate-ids-of-registered-objects
+  (let [page-id (uuid/custom 40 100)
+        ids     tree-ids
+        data    (make-tree-data page-id ids)
+        rect    (get-in data [:pages-index page-id :objects (ids :rect-d)])
+        moved   (gsh/move rect (gpt/point 100 0))
+        data    (ch/process-changes
+                 data
+                 [{:type :mod-obj :id (ids :rect-d) :page-id page-id
+                   :operations (mapv (fn [[attr val]] {:type :set :attr attr :val val})
+                                     (select-keys moved [:x :y :selrect :points]))}])]
+    (t/is (set/subset? #{(ids :inner) (ids :outer)}
+                       (apply-and-get-candidates
+                        data page-id
+                        [{:type :reg-objects :page-id page-id :shapes [(ids :rect-d)]}])))))
+
+(t/deftest candidate-ids-of-reordered-children
+  (let [page-id (uuid/custom 40 100)
+        ids     tree-ids
+        data    (make-tree-data page-id ids)]
+    (t/is (= #{(ids :group)}
+             (apply-and-get-candidates
+              data page-id
+              [{:type :reorder-children :page-id page-id
+                :parent-id (ids :group) :shapes [(ids :rect-b) (ids :rect-a)]}])))))
+
+(t/deftest candidate-ids-ignore-other-pages
+  (let [page-id (uuid/custom 40 100)
+        ids     tree-ids
+        data    (make-tree-data page-id ids)]
+    (t/is (= #{}
+             (ch/get-candidate-object-ids
+              (get-in data [:pages-index page-id :objects])
+              (get-in data [:pages-index page-id :objects])
+              page-id
+              [{:type :mod-obj :id (ids :rect-a) :page-id (uuid/custom 40 101)
+                :operations [{:type :set :attr :name :val "renamed"}]}
+               {:type :set-plugin-data :object-type :shape :object-id (ids :rect-a)
+                :page-id page-id :namespace "ns" :key "k" :value "v"}])))))

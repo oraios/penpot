@@ -30,6 +30,7 @@ export PENPOT_MEDIA_PROCESSING_SERVICE_URI=http://localhost:6065
 
 export PENPOT_FLAGS="\
        $PENPOT_FLAGS \
+       disable-admin-console \
        enable-login-with-password \
        enable-login-with-ldap \
        disable-login-with-oidc \
@@ -41,7 +42,6 @@ export PENPOT_FLAGS="\
        enable-backend-asserts \
        disable-feature-fdata-pointer-map \
        enable-feature-fdata-objects-map \
-       enable-audit-log \
        enable-transit-readable-response \
        disable-remote-media-processing \
        enable-demo-users \
@@ -62,13 +62,14 @@ export PENPOT_FLAGS="\
        disable-tiered-file-data-storage \
        enable-file-validation \
        enable-file-schema-validation \
+       enable-debug-save-faults \
        enable-redis-cache \
        enable-link-preview \
        enable-subscriptions";
 
 # Uncomment for nexus integration testing
 # export PENPOT_FLAGS="$PENPOT_FLAGS enable-nexus";
-# export PENPOT_AUDIT_LOG_ARCHIVE_URI="http://localhost:6070/api/audit";
+# export PENPOT_NEXUS_URI="http://localhost:6070/";
 
 # Default deletion delay for devenv
 export PENPOT_DELETION_DELAY="24h"
@@ -92,6 +93,7 @@ export JAVA_OPTS="\
        -XX:+UseShenandoahGC \
        -XX:+UseCompactObjectHeaders \
        -XX:ShenandoahGCMode=generational \
+       -XX:NativeMemoryTracking=summary \
        -XX:-OmitStackTraceInFastThrow  \
        --sun-misc-unsafe-memory-access=allow \
        --enable-preview \

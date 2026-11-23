@@ -1,45 +1,41 @@
 import { test, expect } from "@playwright/test";
 import { RegisterPage } from "../pages/RegisterPage";
 
-// Regression test for the bug where a freshly verified account (whose
-// profile never had a theme persisted) ended up with an empty string as
-// its theme instead of falling back to the dark default: the workspace
-// switched to light mode and Settings > UI Theme showed a blank field.
+// A freshly verified account has no saved theme preference. It must follow
+// the system theme and show that preference in settings, not a blank field.
 
 test.beforeEach(async ({ page }) => {
   await RegisterPage.initWithLoggedOutUser(page);
 });
 
-test.describe("Email verification", () => {
-  test("Newly verified account defaults to the dark theme", async ({
-    page,
-  }) => {
-    const registerPage = new RegisterPage(page);
+test("Verified account follows the system theme and shows it in settings", async ({
+  page,
+}) => {
+  const registerPage = new RegisterPage(page);
+
+  await test.step("follows the dark system theme", async () => {
+    await page.emulateMedia({ colorScheme: "dark" });
     await registerPage.setupEmailVerificationSuccess();
 
     await registerPage.goToVerifyToken();
     await page.waitForURL(/screen=dashboard/);
 
-    // `default` is the body class applied for dark theme, `light` for
-    // light theme (see app.util.theme/set-color-scheme).
-    await expect(page.locator("body")).toHaveClass(/default/);
-    await expect(page.locator("body")).not.toHaveClass(/light/);
+    // The dark theme uses the legacy body class "default".
+    await expect(page.locator("body")).toHaveClass("default");
   });
 
-  test("Settings > UI Theme shows Penpot Dark (default) selected, not blank", async ({
-    page,
-  }) => {
-    const registerPage = new RegisterPage(page);
-    await registerPage.setupEmailVerificationSuccess();
+  await test.step("follows a change to the light system theme", async () => {
+    await page.emulateMedia({ colorScheme: "light" });
 
-    await registerPage.goToVerifyToken();
-    await page.waitForURL(/screen=dashboard/);
+    await expect(page.locator("body")).toHaveClass("light");
+  });
 
+  await test.step("shows the System theme in settings", async () => {
     await page.goto("/?screen=settings-options");
 
     // The language select is the first combobox on the page, the theme
     // select is the second one.
     const themeSelect = page.getByRole("combobox").nth(1);
-    await expect(themeSelect).toHaveText("Penpot Dark (default)");
+    await expect(themeSelect).toHaveText("System theme");
   });
 });

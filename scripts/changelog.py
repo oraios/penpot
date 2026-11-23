@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """
-changelog.py — Helper commands for the ``update-changelog`` skill.
+changelog.py — Helper commands for the changelog flow.
 
 Uses ``scripts/gh.py`` (via subprocess) and the local ``CHANGES.md`` so the
-skill file itself stays free of inline programs.
+flow memory (`mem:workflow/updating-changelog`) stays free of inline programs.
 
 Subcommands:
+  collect       Collect the release inputs and changelog comparison as JSON
   check-merged  Verify that every given PR is merged (warns otherwise)
+  boom          Generate the :boom: section from `breaking change` issues
+  security      Generate the :lock: section from advisories fixed in a version
   cross-ref     Compare merged milestone PRs against the changelog section
+  dev-only-bugs List milestone bugs that never reached production
   report        Generate the anomaly report (CHANGES-ISSUES.md)
 
 Usage:
+  python3 scripts/changelog.py collect "2.19.0"
   python3 scripts/changelog.py check-merged 9179 9204 9311
   cat prs.txt | python3 scripts/changelog.py check-merged --stdin
+  python3 scripts/changelog.py boom "2.19.0"
+  python3 scripts/changelog.py boom "2.19.0" --write
+  python3 scripts/changelog.py security "2.19.1"
+  python3 scripts/changelog.py security "2.19.1" --write
   python3 scripts/changelog.py cross-ref "2.16.0"
+  python3 scripts/changelog.py dev-only-bugs "2.16.0" [--apply]
   python3 scripts/changelog.py report "2.16.0"
   python3 scripts/changelog.py report "2.16.0" --changes CHANGES.md --output CHANGES-ISSUES.md
 
@@ -33,6 +43,27 @@ from pathlib import Path
 
 REPO = "penpot/penpot"
 GH_PY = Path(__file__).resolve().parent / "gh.py"
+
+BOOM_HEADING = "### :boom: Breaking changes & Deprecations"
+SECURITY_HEADING = "### :lock: Security fixes"
+BREAKING_LABEL = "breaking change"
+EXCLUDED_LABELS = {"no changelog"}
+
+# PR label carried by the security fixes that reference their advisory in the
+# PR body, and the GHSA id pattern used to find that reference.
+SECURITY_PR_LABEL = "pr pt"
+GHSA_ID_RE = re.compile(r"GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}", re.IGNORECASE)
+
+# Marker line of the issue comment that carries the changelog text of a
+# breaking change. Everything after the marker line is the entry content.
+BREAKING_NOTE_RE = re.compile(r"(?im)^#{1,3}[ \t]+Breaking change note[ \t]*$")
+
+# Level used for the headings found inside a breaking change note. Entries
+# themselves are level-4 headings, so note headings must live below them.
+NOTE_HEADING = "#####"
+
+# Emoji prefixes used at the start of issue titles (`:bug:`, `:sparkles:`).
+TITLE_PREFIX_RE = re.compile(r"^(?::[A-Za-z0-9_+-]+:\s*)+")
 
 
 # ─────────────────────────────────────────────
@@ -82,6 +113,19 @@ def fetch_milestone_prs(milestone: str, state: str) -> list[dict]:
     return json.loads(stdout)
 
 
+def load_snapshot(args: argparse.Namespace) -> dict | None:
+    path = getattr(args, "snapshot", None)
+    if path is None:
+        return None
+    try:
+        snapshot = json.loads(Path(path).read_text(encoding="utf-8"))
+        if snapshot["milestone"] != args.milestone:
+            raise ValueError(f"expected milestone {args.milestone}")
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        sys.exit(f"ERROR: invalid changelog snapshot {path}: {err}")
+    return snapshot
+
+
 def extract_version_section(content: str, milestone: str) -> str:
     """Return the changelog body of a ``## <VERSION>`` section (or "")."""
     match = re.search(
@@ -125,6 +169,84 @@ def collect_changelog_issues(section: str) -> set[int]:
     return numbers
 
 
+def issue_excluded(issue: dict | None) -> bool:
+    """Return True when an issue must stay out of the changelog.
+
+    Shared by the ``report`` and ``boom`` subcommands so the exclusions
+    cannot drift apart.
+    """
+    if not issue:
+        return True
+    if issue.get("state") != "CLOSED":
+        return True
+    if issue.get("issue_type") in {"Task"}:
+        return True
+    if issue.get("project_status") in {"Rejected"}:
+        return True
+    if EXCLUDED_LABELS & set(issue.get("labels", [])):
+        return True
+    return False
+
+
+def extract_breaking_note(comment_body: str | None) -> str | None:
+    """Return the content that follows a ``## Breaking change note`` marker.
+
+    The whole comment is used (paragraphs, lists, code blocks), not just its
+    first paragraph, so a breaking change can be as detailed as needed.
+    """
+    if not comment_body:
+        return None
+    match = BREAKING_NOTE_RE.search(comment_body)
+    if not match:
+        return None
+    content = demote_headings(comment_body[match.end():].strip("\n"))
+    return content.strip() or None
+
+
+def demote_headings(markdown: str) -> str:
+    """Push note headings below the entry heading, leaving code fences alone."""
+    lines: list[str] = []
+    in_fence = False
+    for line in markdown.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            lines.append(line)
+            continue
+        if not in_fence:
+            match = re.match(r"^#{1,4}([ \t]+.*)$", line)
+            if match:
+                line = NOTE_HEADING + match.group(1)
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def strip_title_prefix(title: str) -> str:
+    """Remove leading emoji shortcodes from a title."""
+    return TITLE_PREFIX_RE.sub("", title).strip()
+
+
+def closing_pr_numbers(issue: dict) -> list[int]:
+    """Return the sorted closing PR numbers of an issue."""
+    return sorted(set(issue.get("closing_prs", [])))
+
+
+def render_boom_entry(
+    issue: dict,
+    note: str | None,
+    pr_numbers: list[int],
+    author: str | None = None,
+) -> str:
+    """Render one ``:boom:`` entry: title, note content and references."""
+    title = strip_title_prefix(issue["title"])
+    attribution = f"(by @{author}) " if author else ""
+    refs = attribution + issue_link(issue["number"])
+    if pr_numbers:
+        refs += " (PR: " + ", ".join(pr_link(n) for n in pr_numbers) + ")"
+    if note:
+        return f"#### {title}\n\n{note}\n\n{refs}"
+    return f"#### {title}\n\n{refs}"
+
+
 # ─────────────────────────────────────────────
 #  Subcommand: check-merged
 # ─────────────────────────────────────────────
@@ -156,6 +278,347 @@ def cmd_check_merged(args: argparse.Namespace) -> None:
 
 
 # ─────────────────────────────────────────────
+#  Subcommand: boom
+# ─────────────────────────────────────────────
+
+
+def version_section_bounds(content: str, milestone: str) -> tuple[int, int] | None:
+    """Return the ``[start, end)`` offsets of a ``## <VERSION>`` section."""
+    match = re.search(
+        rf"(?m)^## {re.escape(milestone)}(?:[ \t]*\([^)]*\))?[ \t]*$", content
+    )
+    if not match:
+        return None
+    start = match.start()
+    next_heading = re.search(r"(?m)^## ", content[match.end():])
+    end = match.end() + next_heading.start() if next_heading else len(content)
+    return start, end
+
+
+def entry_list_body(entries: list[str]) -> str:
+    """Return the body text that follows a generated subsection heading."""
+    if entries:
+        return "\n\n" + "\n\n".join(entries) + "\n\n"
+    return "\n\n"
+
+
+def replace_boom_section(content: str, milestone: str, entries: list[str]) -> str:
+    """Return ``content`` with its ``:boom:`` subsection replaced.
+
+    The subsection is inserted right after the version header when needed,
+    which keeps ``:boom:`` as the first section. Empty subsections are removed
+    and are not inserted.
+    """
+    bounds = version_section_bounds(content, milestone)
+    if bounds is None:
+        raise ValueError(f'no "## {milestone}" section found')
+    start, end = bounds
+    section = content[start:end]
+    heading = re.search(rf"(?m)^{re.escape(BOOM_HEADING)}[ \t]*$", section)
+    if not entries:
+        if heading is None:
+            return content
+        body_start = start + heading.end()
+        next_heading = re.search(r"(?m)^### ", content[body_start:end])
+        body_end = body_start + next_heading.start() if next_heading else end
+        return content[: start + heading.start()] + content[body_end:]
+    if heading:
+        body_start = start + heading.end()
+        next_heading = re.search(r"(?m)^### ", content[body_start:end])
+        body_end = body_start + next_heading.start() if next_heading else end
+        return content[:body_start] + entry_list_body(entries) + content[body_end:]
+    header = re.match(r"(?m)^## [^\n]*\n", section)
+    if header is None:
+        raise ValueError(f'version "## {milestone}" header has no trailing newline')
+    insert_at = start + header.end()
+    block = "\n" + BOOM_HEADING + entry_list_body(entries)[:-1]
+    return content[:insert_at] + block + content[insert_at:]
+
+
+def fetch_prs_by_issue(issues: list[dict]) -> dict[int, dict]:
+    """Fetch every closing PR of ``issues``, keyed by PR number."""
+    numbers = sorted({n for issue in issues for n in issue.get("closing_prs", [])})
+    if not numbers:
+        return {}
+    return {pr["number"]: pr for pr in fetch_prs_by_numbers(numbers)}
+
+
+def fetch_breaking_notes(issues: list[dict]) -> dict[int, str]:
+    """Return the last ``## Breaking change note`` comment of each issue."""
+    if not issues:
+        return {}
+    comments = json.loads(
+        run_gh_py("comments", *[str(issue["number"]) for issue in issues])
+    )
+    notes: dict[int, str] = {}
+    for comment in comments:
+        note = extract_breaking_note(comment.get("body"))
+        if note is None:
+            continue
+        number = comment["issue"]
+        if number in notes:
+            print(
+                f'WARNING: issue #{number} has several "## Breaking change note" '
+                "comments; using the last one",
+                file=sys.stderr,
+            )
+        notes[number] = note
+    return notes
+
+
+def breaking_issues(issues: list[dict]) -> list[dict]:
+    return sorted(
+        (
+            issue
+            for issue in issues
+            if BREAKING_LABEL in issue.get("labels", []) and not issue_excluded(issue)
+        ),
+        key=lambda issue: issue["number"],
+    )
+
+
+def cmd_boom(args: argparse.Namespace) -> None:
+    """Generate the ``:boom:`` section from ``breaking change`` issues."""
+    snapshot = load_snapshot(args)
+    if snapshot is None:
+        labelled = breaking_issues(
+            json.loads(run_gh_py("issues", args.milestone, "--state", "all"))
+        )
+        notes = fetch_breaking_notes(labelled)
+        prs = fetch_prs_by_issue(labelled)
+    else:
+        labelled = breaking_issues(snapshot["issues"])
+        notes = {int(n): note for n, note in snapshot["breaking_notes"].items()}
+        prs = {pr["number"]: pr for pr in snapshot["prs"] + snapshot["related_prs"]}
+
+    entries: list[str] = []
+    for issue in labelled:
+        note = notes.get(issue["number"])
+        if not note:
+            print(
+                f'WARNING: issue #{issue["number"]} has no "## Breaking change note" '
+                "comment; the entry will have no description",
+                file=sys.stderr,
+            )
+        merged = [
+            prs[num]
+            for num in closing_pr_numbers(issue)
+            if num in prs and prs[num].get("state") == "MERGED"
+        ]
+        author = None
+        if "community contribution" in issue.get("labels", []):
+            authors = [pr["author"] for pr in merged if pr.get("author")]
+            author = authors[0] if authors else None
+        entries.append(
+            render_boom_entry(issue, note, [pr["number"] for pr in merged], author)
+        )
+
+    block = BOOM_HEADING + entry_list_body(entries)
+    print(block.rstrip("\n"))
+
+    if not labelled:
+        print(
+            f"No closed issues labelled `{BREAKING_LABEL}` in {args.milestone}",
+            file=sys.stderr,
+        )
+
+    if args.write:
+        with open(args.changes) as f:
+            content = f.read()
+        try:
+            updated = replace_boom_section(content, args.milestone, entries)
+        except ValueError as err:
+            print(f"ERROR: {err}", file=sys.stderr)
+            sys.exit(1)
+        if updated == content:
+            print(f"{args.changes}: :boom: section already up to date", file=sys.stderr)
+        else:
+            with open(args.changes, "w") as f:
+                f.write(updated)
+            print(f"{args.changes}: :boom: section updated", file=sys.stderr)
+
+
+# ─────────────────────────────────────────────
+#  Subcommand: security
+# ─────────────────────────────────────────────
+
+
+def imperative_description(summary: str) -> str:
+    """Return a changelog description built from an advisory summary.
+
+    Advisory summaries are declarative ("Missing authorization in ... lets
+    ..."), so the description prefixes ``Fix`` and decapitalizes the first
+    word unless it starts with an acronym (``SVG``, ``CVE-...``). The wording
+    may still be polished in the flow; re-running ``security --write``
+    rewrites the entry from the advisory summary.
+    """
+    summary = strip_title_prefix((summary or "").strip())
+    if not summary:
+        return ""
+    first_word = summary.split(maxsplit=1)[0]
+    if len(first_word) > 1 and first_word[1:].islower():
+        summary = summary[0].lower() + summary[1:]
+    return f"Fix {summary}"
+
+
+def render_security_entry(advisory: dict, pr_numbers: list[int]) -> str:
+    """Render one ``:lock:`` entry: description, advisory link and PRs."""
+    ghsa_id = advisory["ghsa_id"]
+    url = advisory.get("url") or (
+        f"https://github.com/{REPO}/security/advisories/{ghsa_id}"
+    )
+    description = imperative_description(advisory.get("summary", "")) or (
+        "Fix a security issue"
+    )
+    entry = f"- {description} ({url})"
+    if pr_numbers:
+        entry += " (PR: " + ", ".join(pr_link(n) for n in pr_numbers) + ")"
+    return entry
+
+
+def fetch_security_advisories(milestone: str) -> list[dict]:
+    """Fetch the advisories that declare ``milestone`` as a patched version."""
+    return json.loads(run_gh_py("advisories", "--patched-version", milestone))
+
+
+def fetch_security_prs(milestone: str) -> dict[str, list[int]]:
+    """Map each GHSA id to the merged ``pr pt`` PRs in a milestone referencing it."""
+    return security_prs_by_advisory(fetch_milestone_prs(milestone, "all"))
+
+
+def security_prs_by_advisory(prs: list[dict]) -> dict[str, list[int]]:
+    by_ghsa: dict[str, list[int]] = {}
+    for pr in prs:
+        if pr.get("state") != "MERGED":
+            continue
+        if SECURITY_PR_LABEL not in pr.get("labels", []):
+            continue
+        for ghsa_id in GHSA_ID_RE.findall(pr.get("body") or ""):
+            by_ghsa.setdefault(ghsa_id.upper(), []).append(pr["number"])
+    return {ghsa_id: sorted(set(numbers)) for ghsa_id, numbers in by_ghsa.items()}
+
+
+def subsection_end(
+    content: str, section: str, start: int, end: int, heading_re: str
+) -> int | None:
+    """Return the offset where the body of a ``###`` subsection ends.
+
+    ``heading_re`` is a prefix of the heading line (e.g. ``### :rocket:``), so
+    the heading text that follows it does not matter.
+    """
+    match = re.search(rf"(?m)^{heading_re}", section)
+    if not match:
+        return None
+    body_start = start + match.end()
+    next_heading = re.search(r"(?m)^### ", content[body_start:end])
+    return body_start + next_heading.start() if next_heading else end
+
+
+def replace_security_section(
+    content: str, milestone: str, entries: list[str]
+) -> str:
+    """Return ``content`` with its ``:lock:`` subsection replaced or added.
+
+    The subsection follows ``:rocket:`` (or ``:boom:`` when there is no
+    ``:rocket:``, or the version header when neither exists), which keeps the
+    layout order. An empty ``entries`` list removes the subsection: the
+    heading only exists when the version has security fixes to list.
+    """
+    bounds = version_section_bounds(content, milestone)
+    if bounds is None:
+        raise ValueError(f'no "## {milestone}" section found')
+    start, end = bounds
+    section = content[start:end]
+
+    heading = re.search(rf"(?m)^{re.escape(SECURITY_HEADING)}[ \t]*$", section)
+    if heading:
+        heading_start = start + heading.start()
+        body_start = start + heading.end()
+        next_heading = re.search(r"(?m)^### ", content[body_start:end])
+        body_end = body_start + next_heading.start() if next_heading else end
+        if not entries:
+            return content[:heading_start] + content[body_end:]
+        return (
+            content[:heading_start]
+            + SECURITY_HEADING
+            + entry_list_body(entries)
+            + content[body_end:]
+        )
+
+    if not entries:
+        return content
+
+    anchor = subsection_end(content, section, start, end, r"### :rocket:")
+    if anchor is None:
+        anchor = subsection_end(content, section, start, end, r"### :boom:")
+    if anchor is None:
+        header = re.match(r"(?m)^## [^\n]*\n", section)
+        if header is None:
+            raise ValueError(f'version "## {milestone}" header has no trailing newline')
+        insert_at = start + header.end()
+        block = "\n" + SECURITY_HEADING + entry_list_body(entries)[:-1]
+        return content[:insert_at] + block + content[insert_at:]
+
+    block = SECURITY_HEADING + entry_list_body(entries)
+    return content[:anchor] + block + content[anchor:]
+
+
+def cmd_security(args: argparse.Namespace) -> None:
+    """Generate the ``:lock:`` section from advisories fixed in the version."""
+    milestone = args.milestone
+    snapshot = load_snapshot(args)
+    if snapshot is None:
+        advisories = fetch_security_advisories(milestone)
+        prs_by_ghsa = fetch_security_prs(milestone)
+    else:
+        advisories = snapshot["advisories"]
+        prs_by_ghsa = snapshot["security_prs"]
+
+    matched = {
+        advisory["ghsa_id"].upper()
+        for advisory in advisories
+        if advisory.get("ghsa_id")
+    }
+    for ghsa_id in sorted(set(prs_by_ghsa) - matched):
+        numbers = ", ".join(f"#{n}" for n in prs_by_ghsa[ghsa_id])
+        print(
+            f"WARNING: PR {numbers} references {ghsa_id}, which declares no patched "
+            f'version "{milestone}"; it will not be listed under :lock:',
+            file=sys.stderr,
+        )
+
+    entries = [
+        render_security_entry(
+            advisory, prs_by_ghsa.get(advisory["ghsa_id"].upper(), [])
+        )
+        for advisory in sorted(advisories, key=lambda advisory: advisory["ghsa_id"])
+    ]
+
+    if entries:
+        print((SECURITY_HEADING + entry_list_body(entries)).rstrip("\n"))
+    else:
+        print(
+            f"No advisories declare patched version {milestone}",
+            file=sys.stderr,
+        )
+
+    if args.write:
+        with open(args.changes) as f:
+            content = f.read()
+        try:
+            updated = replace_security_section(content, milestone, entries)
+        except ValueError as err:
+            print(f"ERROR: {err}", file=sys.stderr)
+            sys.exit(1)
+        if updated == content:
+            print(f"{args.changes}: :lock: section already up to date", file=sys.stderr)
+        else:
+            with open(args.changes, "w") as f:
+                f.write(updated)
+            print(f"{args.changes}: :lock: section updated", file=sys.stderr)
+
+
+# ─────────────────────────────────────────────
 #  Subcommand: cross-ref
 # ─────────────────────────────────────────────
 
@@ -173,7 +636,12 @@ def cmd_cross_ref(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     changelog_refs = collect_changelog_prs(section)
-    milestone_prs = fetch_milestone_prs(args.milestone, "all")
+    snapshot = load_snapshot(args)
+    milestone_prs = (
+        fetch_milestone_prs(args.milestone, "all")
+        if snapshot is None
+        else snapshot["prs"]
+    )
 
     merged = {pr["number"] for pr in milestone_prs if pr.get("state") == "MERGED"}
     closed = [pr for pr in milestone_prs if pr.get("state") == "CLOSED"]
@@ -190,6 +658,227 @@ def cmd_cross_ref(args: argparse.Namespace) -> None:
         print("WARNING: CLOSED (unmerged) PRs in milestone:")
         for pr in closed:
             print(f"  #{pr['number']} {pr['title'][:80]}")
+
+
+# ─────────────────────────────────────────────
+#  Subcommand: dev-only-bugs
+# ─────────────────────────────────────────────
+
+# Bugs found and fixed while building a feature of the same, unreleased
+# milestone never reached end users and stay out of the changelog.
+AUTO_PARENT_TYPES = {"Feature", "Enhancement"}
+
+VERSION_FIELD_RE = re.compile(
+    r"^#{2,4}\s*(?:affected versions?|versions?|environment)[^\n]*\n(.*?)(?=^#{2,4}\s|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+DEV_ENV_RE = re.compile(r"\b(?:hourly|develop|staging|pre|unreleased)\b", re.IGNORECASE)
+PROD_ENV_RE = re.compile(
+    r"\b(?:production|pro|main|saas|design\.penpot\.app|self[- ]?hosted?)\b",
+    re.IGNORECASE,
+)
+VERSION_RE = re.compile(r"\b(\d+)\.(\d+)(?:\.(\d+))?")
+
+
+def version_field(body: str | None) -> str:
+    """Return the "Affected versions" / "Environment" text of an issue body."""
+    match = VERSION_FIELD_RE.search(body or "")
+    return " ".join(match.group(1).split()) if match else ""
+
+
+def full_version(match: tuple[str, ...]) -> tuple[int, int, int]:
+    """Normalize a version regex match to (major, minor, patch)."""
+    major, minor, patch = match
+    return (int(major), int(minor), int(patch) if patch else 0)
+
+
+def only_unreleased_envs(text: str, milestone: str) -> bool:
+    """True when the version text names unreleased environments only:
+    hourly, develop, staging, PRE or exactly this milestone. Any
+    production hint or other version number keeps the bug in the changelog."""
+    current_match = VERSION_RE.search(milestone)
+    if current_match is None:
+        raise ValueError(f"milestone {milestone!r} is not a semver version")
+    current = full_version(current_match.groups())
+    versions = [full_version(m) for m in VERSION_RE.findall(text)]
+    dev = bool(DEV_ENV_RE.search(text)) or current in versions
+    prod = bool(PROD_ENV_RE.search(text)) or any(v != current for v in versions)
+    return dev and not prod
+
+
+def find_dev_only_bugs(milestone: str, issues: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split the milestone's changelog bugs that never reached production.
+
+    ``issues`` come from ``gh.py issue`` (they carry ``body`` and
+    ``parent``). Returns ``(auto, suggested)``: ``auto`` bugs are
+    sub-issues of a Feature or Enhancement of this milestone and get the
+    `no changelog` label; ``suggested`` ones need a human to confirm."""
+    auto, suggested = [], []
+    for issue in issues:
+        if issue.get("issue_type") != "Bug" or issue.get("state") != "CLOSED":
+            continue
+        if "no changelog" in issue.get("labels", []):
+            continue
+        parent = issue.get("parent") or {}
+        entry = {"issue": issue["number"], "issue_title": issue.get("title", "")}
+        if parent.get("milestone") == milestone:
+            entry["reason"] = f"sub-issue of {parent.get('issue_type')} #{parent['number']} in {milestone}"
+            (auto if parent.get("issue_type") in AUTO_PARENT_TYPES else suggested).append(entry)
+            continue
+        # `regression` says something that worked broke, not where: it
+        # also marks regressions users hit in production.
+        if "regression" in issue.get("labels", []):
+            entry["reason"] = "labelled `regression`"
+            suggested.append(entry)
+            continue
+        text = version_field(issue.get("body"))
+        if only_unreleased_envs(text, milestone):
+            entry["reason"] = f'only seen on "{text[:80]}"'
+            suggested.append(entry)
+    return auto, suggested
+
+
+def fetch_milestone_bugs(milestone: str) -> list[dict]:
+    """Closed milestone bugs with body and parent (two batched lookups)."""
+    issues = json.loads(run_gh_py("issues", milestone))
+    numbers = [str(i["number"]) for i in issues if i.get("issue_type") == "Bug"]
+    return json.loads(run_gh_py("issue", *numbers)) if numbers else []
+
+
+def cmd_dev_only_bugs(args: argparse.Namespace) -> None:
+    """List bugs that never reached production; --apply labels the sure ones."""
+    snapshot = load_snapshot(args)
+    if snapshot is None:
+        auto, suggested = find_dev_only_bugs(
+            args.milestone, fetch_milestone_bugs(args.milestone)
+        )
+    else:
+        auto = snapshot["dev_only_bugs"]["auto"]
+        suggested = snapshot["dev_only_bugs"]["suggested"]
+
+    print(f"Label `no changelog` ({len(auto)}):")
+    for e in auto:
+        print(f"  #{e['issue']} {e['issue_title'][:70]} ({e['reason']})")
+    print(f"Candidates to confirm ({len(suggested)}):")
+    for e in suggested:
+        print(f"  #{e['issue']} {e['issue_title'][:70]} ({e['reason']})")
+
+    if args.apply:
+        for e in auto:
+            url = issue_url(e["issue"])
+            try:
+                subprocess.run(
+                    [
+                        "gh",
+                        "issue",
+                        "edit",
+                        str(e["issue"]),
+                        "--repo",
+                        REPO,
+                        "--add-label",
+                        "no changelog",
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as err:
+                detail = (err.stderr or "").strip()
+                detail = detail or f"gh exited with status {err.returncode}"
+                sys.exit(f"ERROR: could not apply `no changelog` to {url}: {detail}")
+            print(
+                f"Applied `no changelog`: {url} ({e['reason']})",
+                flush=True,
+            )
+        print(f"Labelled {len(auto)} issues `no changelog`", file=sys.stderr)
+
+
+def cmd_collect(args: argparse.Namespace) -> None:
+    """Collect release inputs without changing the changelog or GitHub."""
+    milestone = args.milestone
+    content = Path(args.changes).read_text(encoding="utf-8")
+    section = extract_version_section(content, milestone)
+    issue_refs = collect_changelog_issues(section)
+    pr_refs = collect_changelog_prs(section)
+
+    issues = json.loads(
+        run_gh_py(
+            "issues",
+            milestone,
+            "--state",
+            "all",
+            "--include-tasks",
+            "--include-rejected",
+        )
+    )
+    prs = fetch_milestone_prs(milestone, "all")
+    eligible = {issue["number"] for issue in issues if not issue_excluded(issue)}
+    issue_numbers = {issue["number"] for issue in issues}
+    pr_numbers = {pr["number"] for pr in prs}
+    bugs = {
+        issue["number"]
+        for issue in issues
+        if issue["number"] in eligible and issue.get("issue_type") == "Bug"
+    }
+    related_issue_numbers = (
+        issue_refs | {n for pr in prs for n in pr.get("closing_issues", [])}
+    ) - issue_numbers
+    detail_numbers = sorted(bugs | related_issue_numbers)
+    details = (
+        json.loads(run_gh_py("issue", *map(str, detail_numbers)))
+        if detail_numbers
+        else []
+    )
+    related_pr_numbers = (
+        pr_refs | {n for issue in issues for n in closing_pr_numbers(issue)}
+    ) - pr_numbers
+    related_prs = (
+        fetch_prs_by_numbers(sorted(related_pr_numbers)) if related_pr_numbers else []
+    )
+    auto, suggested = find_dev_only_bugs(
+        milestone, [issue for issue in details if issue["number"] in bugs]
+    )
+    notes = fetch_breaking_notes(breaking_issues(issues))
+    advisories = fetch_security_advisories(milestone)
+
+    other_versions: dict[int, list[str]] = {}
+    for version_section in re.split(r"(?m)(?=^## \d+\.\d+\.\d+)", content):
+        header = re.match(r"^## (\d+\.\d+\.\d+)\b", version_section)
+        if header is None or header[1] == milestone:
+            continue
+        for number in sorted(
+            collect_changelog_issues(version_section) & (eligible | issue_refs)
+        ):
+            other_versions.setdefault(number, []).append(header[1])
+
+    snapshot = {
+        "milestone": milestone,
+        "issues": issues,
+        "eligible_issues": sorted(eligible),
+        "prs": prs,
+        "related_issues": [
+            issue for issue in details if issue["number"] in related_issue_numbers
+        ],
+        "related_prs": related_prs,
+        "breaking_notes": notes,
+        "advisories": advisories,
+        "security_prs": security_prs_by_advisory(prs),
+        "dev_only_bugs": {"auto": auto, "suggested": suggested},
+        "comparison": {
+            "section_exists": version_section_bounds(content, milestone) is not None,
+            "issue_refs": sorted(issue_refs),
+            "pr_refs": sorted(pr_refs),
+            "missing_issues": sorted(eligible - issue_refs - other_versions.keys()),
+            "ineligible_references": sorted(issue_refs - eligible),
+            "issues_in_other_versions": other_versions,
+            "unlisted_merged_prs": sorted(
+                pr["number"]
+                for pr in prs
+                if pr.get("state") == "MERGED" and pr["number"] not in pr_refs
+            ),
+        },
+    }
+    print(json.dumps(snapshot, indent=2))
 
 
 # ─────────────────────────────────────────────
@@ -231,10 +920,14 @@ def cmd_report(args: argparse.Namespace) -> None:
     """Generate the changelog anomaly report and write it to a file."""
     milestone = args.milestone
 
-    all_issues = json.loads(run_gh_py("issues", milestone, "--state", "all"))
+    snapshot = load_snapshot(args)
+    if snapshot is None:
+        all_issues = json.loads(run_gh_py("issues", milestone, "--state", "all"))
+        all_prs = fetch_milestone_prs(milestone, "all")
+    else:
+        all_issues = snapshot["issues"]
+        all_prs = snapshot["prs"]
     issue_by_num = {i["number"]: i for i in all_issues}
-
-    all_prs = fetch_milestone_prs(milestone, "all")
     pr_by_num = {p["number"]: p for p in all_prs}
 
     with open(args.changes) as f:
@@ -253,7 +946,10 @@ def cmd_report(args: argparse.Namespace) -> None:
     for issue in issue_by_num.values():
         unknown_prs.update(issue.get("closing_prs", []))
     unknown_prs -= set(pr_milestone_cache)
-    if unknown_prs:
+    if snapshot is not None:
+        for pr in snapshot["related_prs"]:
+            pr_milestone_cache[pr["number"]] = pr.get("milestone")
+    elif unknown_prs:
         print(
             f"Resolving milestones for {len(unknown_prs)} PRs outside {milestone}...",
             file=sys.stderr,
@@ -268,7 +964,12 @@ def cmd_report(args: argparse.Namespace) -> None:
     unknown_issues |= collect_changelog_issues(extract_subsection(section, r"### :rocket:"))
     unknown_issues -= set(issue_milestone_cache)
     external_issues: dict[int, dict] = {}
-    if unknown_issues:
+    if snapshot is not None:
+        for issue in snapshot["related_issues"]:
+            issue_milestone_cache[issue["number"]] = issue.get("milestone")
+            if "error" not in issue:
+                external_issues[issue["number"]] = issue
+    elif unknown_issues:
         print(
             f"Resolving milestones for {len(unknown_issues)} issues outside {milestone}...",
             file=sys.stderr,
@@ -297,21 +998,6 @@ def cmd_report(args: argparse.Namespace) -> None:
     def get_issue_milestone(issue_num: int) -> str | None:
         """Return the milestone title for an issue, or None if unassigned."""
         return issue_milestone_cache.get(issue_num)
-
-    excluded_labels = {"release blocker", "no changelog"}
-
-    def issue_excluded(issue: dict | None) -> bool:
-        if not issue:
-            return True
-        if issue.get("state") != "CLOSED":
-            return True
-        if issue.get("issue_type") in {"Task"}:
-            return True
-        if issue.get("project_status") in {"Rejected"}:
-            return True
-        if excluded_labels & set(issue.get("labels", [])):
-            return True
-        return False
 
     # Type A: issue in milestone, referenced PR in different milestone or none
     anomalies_a = []
@@ -361,13 +1047,14 @@ def cmd_report(args: argparse.Namespace) -> None:
     # These stay in the changelog (they are preserved, not removed) — the
     # human decides whether to label the issue or move the entry elsewhere.
     anomalies_e = []
-    boom_body = extract_subsection(section, r"### :boom:")
-    if boom_body:
-        for issue_num in sorted(collect_changelog_issues(boom_body)):
+    boom_section_body = extract_subsection(section, r"### :boom:")
+    boom_issues = collect_changelog_issues(boom_section_body)
+    if boom_section_body:
+        for issue_num in sorted(boom_issues):
             labels = get_issue_labels(issue_num)
             if labels is None:
                 continue
-            if "breaking change" not in labels:
+            if BREAKING_LABEL not in labels:
                 issue = issue_by_num.get(issue_num) or external_issues.get(issue_num) or {}
                 anomalies_e.append(
                     {
@@ -403,6 +1090,20 @@ def cmd_report(args: argparse.Namespace) -> None:
                     "issue": issue_num,
                     "issue_title": issue.get("title", ""),
                     "reason": "labelled `release highlight` but missing from :rocket:",
+                }
+            )
+
+    # Type G: `breaking change` issue missing from :boom:. Same contract as
+    # type F for highlights: the label is the only source of the section.
+    anomalies_g = []
+    for issue_num, issue in sorted(issue_by_num.items()):
+        if issue_excluded(issue) or issue_num in boom_issues:
+            continue
+        if BREAKING_LABEL in issue.get("labels", []):
+            anomalies_g.append(
+                {
+                    "issue": issue_num,
+                    "issue_title": issue.get("title", ""),
                 }
             )
 
@@ -449,6 +1150,15 @@ def cmd_report(args: argparse.Namespace) -> None:
             ):
                 anomalies_d.append({"version": ver, "line": line[:100]})
 
+    # Bugs that may never have reached production: warnings, not anomalies.
+    if snapshot is None:
+        dev_auto, dev_suggested = find_dev_only_bugs(
+            milestone, fetch_milestone_bugs(milestone)
+        )
+    else:
+        dev_auto = snapshot["dev_only_bugs"]["auto"]
+        dev_suggested = snapshot["dev_only_bugs"]["suggested"]
+
     def fmt_ms(ms: str | None) -> str:
         return ms if ms else "_none_"
 
@@ -459,13 +1169,14 @@ def cmd_report(args: argparse.Namespace) -> None:
         )
         f.write("---\n\n")
 
-        n_a, n_b, n_c, n_d, n_e, n_f = (
+        n_a, n_b, n_c, n_d, n_e, n_f, n_g = (
             len(anomalies_a),
             len(anomalies_b),
             len(anomalies_c),
             len(anomalies_d),
             len(anomalies_e),
             len(anomalies_f),
+            len(anomalies_g),
         )
 
         f.write("## Summary\n\n")
@@ -476,14 +1187,15 @@ def cmd_report(args: argparse.Namespace) -> None:
             f"- **PR in {milestone}, closing issue in a different milestone:** {n_b}\n"
         )
         f.write(f"- **:boom: entry without breaking change label:** {n_e}\n")
+        f.write(f"- **:boom: out of sync with breaking change label:** {n_g}\n")
         f.write(f"- **:rocket: out of sync with release highlight label:** {n_f}\n")
-        f.write(f"- **Total anomalies:** {n_a + n_b + n_e + n_f}\n")
+        f.write(f"- **Total anomalies:** {n_a + n_b + n_e + n_f + n_g}\n")
         f.write(
             f"- **Released X.Y.0 version missing :rocket: section (gap):** {n_c}\n"
         )
         f.write(f"- **:rocket: entry without issue AND PR references (gap):** {n_d}\n\n")
 
-        if n_a or n_b or n_e or n_f:
+        if n_a or n_b or n_e or n_f or n_g:
             f.write("## Anomalies\n\n")
             f.write(
                 "Types A and B are milestone mismatches between an issue in the changelog "
@@ -494,8 +1206,9 @@ def cmd_report(args: argparse.Namespace) -> None:
                 "removing the misleading entry from the changelog.\n\n"
                 "Type E entries stay in the changelog: either label the issue "
                 "as `breaking change` or move the entry out of `:boom:`.\n\n"
-                "Type F is a rule violation: `:rocket:` must list exactly the "
-                "issues labelled `release highlight`. Fix the label on GitHub "
+                "Types F and G are rule violations: `:rocket:` must list exactly "
+                "the issues labelled `release highlight`, and `:boom:` exactly "
+                "the issues labelled `breaking change`. Fix the label on GitHub "
                 "or re-run the workflow.\n\n"
             )
 
@@ -556,6 +1269,18 @@ def cmd_report(args: argparse.Namespace) -> None:
                         f"- ⚠️ {issue_link_title(e['issue'], e['issue_title'][:80])}: {e['reason']}\n"
                     )
                 f.write("\n")
+
+            if n_g:
+                f.write("\n### :boom: out of sync with breaking change label\n\n")
+                f.write(
+                    "These milestone issues carry the `breaking change` label but "
+                    "have no entry under `### :boom: Breaking changes & Deprecations`. "
+                    "Regenerate the section (`changelog.py boom --write`) or add "
+                    "the entry.\n\n"
+                )
+                for e in anomalies_g:
+                    f.write(f"- ⚠️ {issue_link_title(e['issue'], e['issue_title'][:80])}\n")
+                f.write("\n")
         else:
             f.write(
                 "✅ No anomalies found. All (issue, PR) pairs in the changelog have aligned milestone assignments.\n\n"
@@ -590,10 +1315,30 @@ def cmd_report(args: argparse.Namespace) -> None:
                 for d in anomalies_d:
                     f.write(f"- **{d['version']}**: `{d['line']}`\n")
                 f.write("\n")
-        elif not (n_a or n_b or n_e or n_f):
+        elif not (n_a or n_b or n_e or n_f or n_g):
             f.write(
                 "✅ No highlight gaps found. All released X.Y.0 versions have properly referenced :rocket: entries.\n\n"
             )
+
+        if dev_auto or dev_suggested:
+            f.write("## Bugs that may never have reached production\n\n")
+            f.write(
+                "These are warnings, not anomalies. Bugs found while building "
+                "a feature of this release never affected end users. Add the "
+                "`no changelog` label to the ones you confirm and re-run.\n\n"
+            )
+            if dev_auto:
+                f.write(
+                    "### Sub-issues of a feature of this milestone (run `dev-only-bugs --apply`)\n\n"
+                )
+                for e in dev_auto:
+                    f.write(f"- {issue_link_title(e['issue'], e['issue_title'][:80])}: {e['reason']}\n")
+                f.write("\n")
+            if dev_suggested:
+                f.write("### Candidates to confirm\n\n")
+                for e in dev_suggested:
+                    f.write(f"- {issue_link_title(e['issue'], e['issue_title'][:80])}: {e['reason']}\n")
+                f.write("\n")
 
         f.write("---\n\n")
         f.write("## Context\n\n")
@@ -618,9 +1363,16 @@ def cmd_report(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Helper commands for the update-changelog skill"
+        description="Helper commands for the changelog flow"
     )
     sub = parser.add_subparsers(dest="command", required=True, title="subcommands")
+
+    p_collect = sub.add_parser("collect", help="Collect changelog inputs as JSON")
+    p_collect.add_argument("milestone", help="Milestone title (e.g. '2.19.0')")
+    p_collect.add_argument(
+        "--changes", default="CHANGES.md", help="Path to the changelog"
+    )
+    p_collect.set_defaults(func=cmd_collect)
 
     p_check = sub.add_parser(
         "check-merged", help="Verify that every given PR is merged"
@@ -633,6 +1385,26 @@ def main() -> None:
                          help="Read PR numbers from stdin (one per line)")
     p_check.set_defaults(func=cmd_check_merged)
 
+    p_boom = sub.add_parser(
+        "boom", help="Generate the :boom: section from `breaking change` issues"
+    )
+    p_boom.add_argument("milestone", help="Milestone title (e.g. '2.16.0')")
+    p_boom.add_argument("--changes", default="CHANGES.md",
+                        help="Path to the changelog file (default: CHANGES.md)")
+    p_boom.add_argument("--write", action="store_true",
+                        help="Replace the :boom: section in CHANGES.md in place")
+    p_boom.set_defaults(func=cmd_boom)
+
+    p_security = sub.add_parser(
+        "security", help="Generate the :lock: section from advisories fixed in a version"
+    )
+    p_security.add_argument("milestone", help="Milestone title (e.g. '2.19.1')")
+    p_security.add_argument("--changes", default="CHANGES.md",
+                            help="Path to the changelog file (default: CHANGES.md)")
+    p_security.add_argument("--write", action="store_true",
+                            help="Replace the :lock: section in CHANGES.md in place")
+    p_security.set_defaults(func=cmd_security)
+
     p_cross = sub.add_parser(
         "cross-ref",
         help="Compare merged milestone PRs against the changelog section",
@@ -641,6 +1413,15 @@ def main() -> None:
     p_cross.add_argument("--changes", default="CHANGES.md",
                          help="Path to the changelog file (default: CHANGES.md)")
     p_cross.set_defaults(func=cmd_cross_ref)
+
+    p_dev = sub.add_parser(
+        "dev-only-bugs",
+        help="List milestone bugs that never reached production",
+    )
+    p_dev.add_argument("milestone", help="Milestone title (e.g. '2.16.0')")
+    p_dev.add_argument("--apply", action="store_true",
+                       help="Label the sub-issues of a milestone feature `no changelog`")
+    p_dev.set_defaults(func=cmd_dev_only_bugs)
 
     p_report = sub.add_parser(
         "report", help="Generate the anomaly report (CHANGES-ISSUES.md)"
@@ -651,6 +1432,11 @@ def main() -> None:
     p_report.add_argument("--output", default="CHANGES-ISSUES.md",
                           help="Report output path (default: CHANGES-ISSUES.md)")
     p_report.set_defaults(func=cmd_report)
+
+    for command in (p_boom, p_security, p_cross, p_dev, p_report):
+        command.add_argument(
+            "--snapshot", help="Use JSON from collect instead of GitHub"
+        )
 
     args = parser.parse_args()
     args.func(args)

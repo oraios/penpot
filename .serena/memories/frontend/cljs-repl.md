@@ -22,7 +22,7 @@ Component instance shapes carry `:component-id` and `:component-file` directly; 
 
 ## Navigation recipe
 
-To programmatically open a workspace file, all three ids are required:
+To open a specific workspace file and page from the REPL, pass their IDs and the team explicitly. If omitted the event can fall back to the current workspace, which may not be the one you intend to inspect:
 
 ```clojure
 (do (require '[app.main.data.common :as dcm])
@@ -49,42 +49,36 @@ Get `team-id` from `(:current-team-id @app.main.store/state)`. Get file ids from
 
 ## Runtime patching with `set!`
 
-Some frontend vars are deliberately mutable escape hatches for runtime instrumentation or circular-dependency patching. From `cljs_repl`, use `set!` for temporary debugging of CLJS vars such as `app.main.store/on-event`, `app.main.errors/reload-file`, `app.main.errors/is-plugin-error?`, `app.main.errors/last-report`, or `app.main.errors/last-exception`. These patches affect only the live browser runtime and disappear on reload or recompilation.
+Some frontend vars are deliberately mutable escape hatches for runtime instrumentation or circular-dependency patching. From `cljs_repl`, use `set!` for temporary debugging of CLJS vars such as `app.main.errors/reload-file`, `app.main.errors/is-plugin-error?`, `app.main.errors/last-report`, or `app.main.errors/last-exception`. These patches affect only the live browser runtime and disappear on reload or recompilation.
+
+`set!` on `app.main.store/on-event` does nothing at runtime: the store captured the function when it was created. To watch events, subscribe to the store stream and dispose the subscription after:
 
 ```clojure
 ;; Log non-noisy Potok events temporarily.
-(set! app.main.store/on-event
-      (fn [event]
-        (when (potok.v2.core/event? event)
-          (.log js/console (potok.v2.core/repr-event event)))))
+(def sub
+  (beicon.v2.core/subs!
+   (fn [event]
+     (when (potok.v2.core/event? event)
+       (.log js/console (potok.v2.core/repr-event event))))
+   app.main.store/stream))
+;; (beicon.v2.core/dispose! sub)
 ```
+
+`cljs_repl` starts every call in `cljs.user`; begin a call with `(in-ns 'my-ns)` to reuse helpers defined in another namespace.
+
+`app.main.repo/cmd!` is a multimethod. For a temporary RPC spy, wrap its default method for the target command and remove your method afterward; do not replace the var or its arity property.
 
 Restore mutable hooks after debugging, or reload the frontend. Use JVM `alter-var-root` only for JVM Clojure; it is not the normal way to patch live CLJS browser vars.
 
 ## Browser-console debug namespace
 
-In development, the JS console exposes `debug` helpers from `frontend/src/debug.cljs`:
-
-```javascript
-debug.set_logging("namespace", "debug");
-debug.dump_state();
-debug.dump_buffer();
-debug.get_state(":workspace-local :selected");
-debug.dump_objects();
-debug.dump_object("Rect-1");
-debug.dump_selected();
-debug.dump_tree(true, true);
-```
-
-Visual workspace debug overlays can be toggled with `debug.toggle_debug("bounding-boxes")`, `"group"`, `"events"`, or `"rotation-handler"`; `debug.debug_all()` and `debug.debug_none()` toggle all visual aids.
-
-For temporary source traces, prefer existing logging (`app.common.logging` / `app.util.logging`) or short-lived `prn`, `app.common.pprint/pprint`, `js/console.log`, or `js-debugger` calls. Remove temporary source instrumentation before committing.
+Development builds expose the `debug` JS namespace. Read `frontend/src/debug.cljs` for the current commands and overlays. Remove temporary source traces before committing.
 
 ## Runtime targeting
 
 `cljs_repl` may connect to the wrong runtime when several are attached, such as workspace plus rasterizer. Verify with `(.-title js/document)`; it should show the workspace file name, not "Penpot - Rasterizer".
 
-To list or target shadow-cljs runtimes, run from `/home/penpot/penpot/frontend`:
+To list or target shadow-cljs runtimes, run from `frontend/`:
 
 ```bash
 printf '(shadow.cljs.devtools.api/repl-runtimes :main)\n' | timeout 10 npx shadow-cljs clj-eval --stdin

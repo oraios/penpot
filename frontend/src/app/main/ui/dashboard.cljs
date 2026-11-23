@@ -8,7 +8,6 @@
   (:require-macros [app.main.style :as stl])
   (:require
    [app.common.data.macros :as dm]
-   [app.common.exceptions :as ex]
    [app.config :as cf]
    [app.main.data.dashboard :as dd]
    [app.main.data.dashboard.shortcuts :as sc]
@@ -19,6 +18,7 @@
    [app.main.data.plugins :as dp]
    [app.main.data.profile :as dprof]
    [app.main.data.project :as dpj]
+   [app.main.data.team :as dtm]
    [app.main.refs :as refs]
    [app.main.router :as rt]
    [app.main.store :as st]
@@ -225,8 +225,10 @@
                     (st/emit! (ev/event {::ev/name "install-plugin" :name (:name plugin) :url plugin-url}))
                     (open-permissions-dialog plugin))
                   (st/emit! (notif/error (tr "dashboard.plugins.parse-error")))))
-              (fn [_]
-                (st/emit! (notif/error (tr "dashboard.plugins.bad-url"))))))
+              (fn [err]
+                (st/emit! (notif/error (if (= ::preg/global-not-allowed (:type (ex-data err)))
+                                         (tr "workspace.plugins.error.global-not-allowed")
+                                         (tr "dashboard.plugins.bad-url")))))))
         (binding [storage/*sync* true]
           (swap! storage/session dissoc :plugin-url))))))
 
@@ -297,6 +299,8 @@
           (st/emit! (dnt/add-team-to-organization {:team-id         (:team-id action)
                                                    :organization-id (:organization-id action)
                                                    :skip-audit?     true}))
+          :create-team-in-organization
+          (st/emit! (dtm/check-and-create-team (:team-id action)))
           nil)))))
 
 (mf/defc dashboard*

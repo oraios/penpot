@@ -123,7 +123,8 @@
 
 (defn- get-resolved-file
   [cfg file-id]
-  (bfc/get-file cfg file-id :migrate? false :decode? false))
+  (-> (bfc/get-file cfg file-id :migrate? false :decode? false)
+      (bfc/file->response)))
 
 (defn prepare-download
   [file filename]
@@ -359,10 +360,11 @@
     (let [path (tmp/tempfile :prefix "penpot.export." :min-age "30m")]
       (with-open [output (io/output-stream path)]
         (-> cfg
-            (assoc ::bfc/ids file-ids)
+            (assoc ::bfc/file-ids file-ids)
             (assoc ::bfc/embed-assets embed?)
             (assoc ::bfc/include-libraries libs?)
-            (bf.v3/export-files! output)))
+            (assoc ::bfc/output output)
+            (bf.v3/export-files!)))
 
       (if clone?
         (let [profile    (profile/get-profile pool profile-id)
@@ -371,7 +373,6 @@
                                          :profile-id profile-id
                                          :project-id project-id)
               cfg        (assoc cfg
-                                ::bfc/overwrite false
                                 ::bfc/profile-id profile-id
                                 ::bfc/project-id project-id
                                 ::bfc/team-id (:id team)
@@ -784,8 +785,12 @@
 
     (db/tx-run! (assoc cfg ::db/rollback true)
                 (fn [cfg]
-                  (let [file (bfc/get-file cfg file-id)
-                        libs (bfc/get-resolved-file-libraries cfg file-id)]
+                  ;; Validation walks every page and component, so the
+                  ;; file is read realized; the library map is built
+                  ;; from the file (not its id) and its own loader
+                  ;; resolves each library's pointers.
+                  (let [file (bfc/get-file cfg file-id :realize? true)
+                        libs (bfc/get-resolved-file-libraries cfg file)]
                     (if file
                       (let [errors (cfv/validate-file file libs)]
                         {::yres/status  200
