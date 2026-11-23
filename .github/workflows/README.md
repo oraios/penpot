@@ -14,7 +14,7 @@ All three reviewers use Serena for code navigation. The CI-only MCP config defin
 
 Each review job installs `playwright-cli` and headless Chromium in its official `penpotapp/devenv` container. On same-repository PRs, reviewers can open a page with `playwright-cli open --browser=chromium <url>` and inspect it with `playwright-cli snapshot`. [Container setup and CLI version](../scripts/pr-review/setup-review-tools.sh)
 
-Only people who can push to the repository can request a review. To use a command in the PR conversation, the workflow must already be on the repository’s default branch. For a PR from another fork, post the command in the main conversation. The reviewer reads the proposed changes alongside the base repository’s code. GitHub normally withholds credentials from inline comments and submitted reviews on those PRs.
+Only people who can push to the repository can request a review. Commands in the main PR conversation use the workflow on the default branch. To test a new workflow from an inline thread on an older PR, first update the PR branch from its base. For a PR from another fork, post the command in the main conversation. The reviewer reads the proposed changes alongside the base repository’s code. GitHub normally withholds credentials from inline comments and submitted reviews on those PRs.
 
 ### Claude Code
 

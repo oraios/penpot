@@ -9,9 +9,13 @@ def review_config(provider):
     config_dir = Path(__file__).parent / "config"
     # Serena tailors its tools to the client that launches it.
     contexts = {"claude": "claude-code", "copilot": "copilot-cli", "opencode": "ide"}
-    template = (config_dir / "mcp.json").read_text(encoding="utf-8")
-    config = json.loads(template.replace("${SERENA_CONTEXT}", contexts[provider]))
+    config = json.loads((config_dir / "mcp.json").read_text(encoding="utf-8"))
     servers = config["mcpServers"]
+    # Copilot can launch MCP servers from the Actions workspace, one level above
+    # the reviewed checkout. Pass the checkout path explicitly to every client.
+    arguments = {"${PROJECT_ROOT}": str(Path.cwd()), "${SERENA_CONTEXT}": contexts[provider]}
+    for server in servers.values():
+        server["args"] = [arguments.get(arg, arg) for arg in server["args"]]
 
     if provider == "copilot":
         for server in servers.values():
