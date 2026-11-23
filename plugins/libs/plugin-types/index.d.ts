@@ -110,6 +110,7 @@ export interface Penpot extends Omit<
    *  - themechange: event emitted when the user changes its theme. The callback will receive the new theme (currently: either `dark` or `light`)
    *  - filechange: event emitted when a different file is opened. The callback will receive the new file.
    *  - contentsave: event emitted after the file content is saved in the backend. The callback receives no arguments.
+   *  - contentrollback: event emitted after the backend rejected some changes and they were undone in the workspace. The callback receives a `ContentRollback` with the files, pages and shapes affected.
    *  - finish: event emitted when the current file is closed. The callback will receive the id of the closed file.
    *
    * @param type The event type to listen for.
@@ -1165,6 +1166,19 @@ export interface Context {
   readonly theme: Theme;
 
   /**
+   * The Penpot instance URL and the current address in the app, in the
+   * dashboard as well as in the workspace. Requires `content:read` permission.
+   *
+   * @example
+   * ```js
+   * const { baseUrl, href, params } = penpot.location;
+   * console.log(baseUrl); // "https://design.penpot.app/"
+   * console.log(params['file-id']);
+   * ```
+   */
+  readonly location: PenpotLocation;
+
+  /**
    * Access to the localStorage proxy
    */
   readonly localStorage: LocalStorage;
@@ -1629,6 +1643,24 @@ export interface Context {
    * rejected with an Error, both on timeout and on an invalid timeout value.
    */
   waitForLayoutUpdate(timeout?: number): Promise<void>;
+
+  /**
+   * This method returns a promise that will be resolved when pending file
+   * changes have been saved to the backend, or when there is nothing to save.
+   * It force-flushes the persistence buffer first when work is pending.
+   * @param timeout Maximum time to wait, in milliseconds. If the timeout
+   * elapses before the save settles, the promise is rejected. Defaults to
+   * 60000; the promise never waits indefinitely.
+   * @return The promise to be resolved when the save has settled. It is
+   * rejected with an Error on save failure, when changes are rolled back
+   * during the wait, on timeout, or on an invalid timeout value. A save
+   * that failed before the call also rejects: with `save-retrying` while
+   * Penpot keeps retrying it, otherwise with the failure code until the
+   * file is reopened. The Error `code` property tells the cases apart:
+   * `save-timeout`, `rolled-back`, `save-retrying`, or the failure code
+   * (`save-failed` unless the backend gave a more specific one).
+   */
+  waitForSave(timeout?: number): Promise<void>;
 }
 
 /**
@@ -1859,6 +1891,37 @@ export interface EventsMap {
    * The `contentsave` event will trigger after the file content is saved in the backend.
    */
   readonly contentsave: void;
+
+  /**
+   * The `contentrollback` event will trigger after the backend rejected some changes
+   * and the workspace undid them, together with the rest of their undo steps and any
+   * later change to the same file. Changes made by a plugin can be undone this way
+   * after the call that made them returned, so a plugin that relies on them should
+   * read the affected shapes again. The event fires once the undone data is in the
+   * workspace. When the workspace could not undo the changes in place, it reloads the
+   * file from the server first; the whole file then holds the server data, so shapes
+   * outside the listed ones may have changed too.
+   */
+  readonly contentrollback: ContentRollback;
+}
+
+/**
+ * What a rollback of rejected changes undid, as given to the `contentrollback` event.
+ */
+export interface ContentRollback {
+  /**
+   * Ids of the files that lost changes.
+   */
+  readonly fileIds: string[];
+  /**
+   * Ids of the pages the undone changes touched.
+   */
+  readonly pageIds: string[];
+  /**
+   * Ids of the page shapes the undone changes touched. A shape the undone changes
+   * created no longer exists; one they removed exists again.
+   */
+  readonly shapeIds: string[];
 }
 
 /**
@@ -3060,7 +3123,8 @@ export interface LibraryComponent extends LibraryElement {
   remove(): void;
 
   /**
-   * Restores this component if it has been deleted, including its main instance.
+   * Restores this component if it has been deleted, including its main instance,
+   * in the current file's library.
    * Leaves the current page, selection, zoom, and viewport unchanged.
    * Requires `library:write` permission. Does nothing if already restored.
    *
@@ -3160,6 +3224,32 @@ export type LibraryContext = {
    * ```
    */
   readonly connected: Library[];
+
+  /**
+   * The library that supplies tokens to the current file.
+   * Defaults to the local library.
+   *
+   * Assign a connected library that has its own tokens to use it as the
+   * source. This copies its active themes and sets to the current file.
+   * Assign `local` to use the file's own tokens again. Themes and sets
+   * that don't exist in the local tokens are deactivated.
+   * Setting the source requires `content:write` permission and supports undo.
+   * Assigning the current source again keeps the active themes and sets.
+   *
+   * The catalog of an external `tokensSource` is read-only and reports the
+   * library's own active themes and sets. To change which ones are active
+   * in the current file, use `penpot.library.local.tokens`, which lists the
+   * tokens of the source.
+   *
+   * @example
+   * ```js
+   * const source = await penpot.library.connectLibrary('library-id');
+   * penpot.library.tokensSource = source;
+   * // Restore local tokens:
+   * penpot.library.tokensSource = penpot.library.local;
+   * ```
+   */
+  tokensSource: Library;
 
   /**
    * Retrieves a summary of available libraries that can be connected to.
@@ -3325,6 +3415,33 @@ export interface LibraryTypography extends LibraryElement {
    * ```
    */
   setFont(font: Font, variant?: FontVariant): void;
+}
+
+/**
+ * The Penpot instance URL and the current address in the app.
+ * Each read of `penpot.location` returns a new snapshot.
+ *
+ * Query params that carry secrets (`share-id`, any param ending in
+ * `token`, `secret` or `password`, and the OAuth params `request`,
+ * `code` and `state`) are left out of `params` and `href`.
+ */
+export interface PenpotLocation {
+  /**
+   * The public URL of the Penpot instance, ending in `/`,
+   * e.g. `"https://design.penpot.app/"`.
+   */
+  readonly baseUrl: string;
+  /**
+   * The URL of the current screen, e.g. the open file and page:
+   * `"https://design.penpot.app/?screen=workspace&team-id=…&file-id=…&page-id=…"`.
+   * Use it to link to what the user is looking at.
+   */
+  readonly href: string;
+  /**
+   * The query params of the current URL, e.g. `screen`, `team-id`,
+   * `file-id` and `page-id`. A param repeated in the URL keeps its last value.
+   */
+  readonly params: Record<string, string>;
 }
 
 /**
@@ -4417,6 +4534,11 @@ export interface ShapeBase extends PluginData {
    * several tokens with the same name in different sets, the actual token applied
    * and the value set to the attributes will depend on which sets are active
    * (and will change if different sets or themes are activated later).
+   *
+   * NOTE that the per-side stroke width properties (`strokeWidthTop`,
+   * `strokeWidthRight`, `strokeWidthBottom`, `strokeWidthLeft`) are only valid on
+   * boards and rectangles. Applying one to any other shape raises a validation
+   * error. The uniform `strokeWidth` property is accepted on every shape.
    */
   applyToken(token: Token, properties?: TokenProperty[]): void;
 
@@ -4905,6 +5027,10 @@ export interface TokenBase {
    * several tokens with the same name in different sets, the actual token applied
    * and the value set to the attributes will depend on which sets are active
    * (and will change if different sets or themes are activated later).
+   *
+   * NOTE that the per-side stroke width properties are only valid on boards and
+   * rectangles; applying one to any other shape raises a validation error. The
+   * uniform `strokeWidth` property is accepted on every shape.
    */
   applyToShapes(shapes: Shape[], properties?: TokenProperty[]): void;
 
@@ -5562,10 +5688,12 @@ export type Token =
  */
 export interface TokenCatalog {
   /**
-   * Returns true if the tokens can be edited (it can't
-   * if the tokens of the file are in an external library).
-   * Note that even in this case, Themes and Sets status still
-   * can be changed and tokens can be applied to shapes.
+   * Returns true if the tokens in this catalog can be edited. Only the
+   * catalog of the current file (`penpot.library.local.tokens`) can be
+   * edited, and only when the file is its own tokens source.
+   * When the tokens come from an external library, the local catalog
+   * can still change the active themes and sets, and its tokens can
+   * still be applied to shapes.
    */
   readonly isEditableTokens: boolean;
 
@@ -5639,7 +5767,8 @@ export interface TokenSet {
   name: string;
 
   /**
-   * Indicates if the set is currently active.
+   * Indicates if the set is active in the file that owns this catalog.
+   * Only sets from `penpot.library.local.tokens` can be changed.
    */
   active: boolean;
 
@@ -5655,6 +5784,7 @@ export interface TokenSet {
 
   /**
    * Toggles the active status of this set.
+   * Only sets from `penpot.library.local.tokens` can be changed.
    */
   toggleActive(): void;
 
@@ -5739,12 +5869,14 @@ export interface TokenTheme {
   name: string;
 
   /**
-   * Indicates if the theme is currently active.
+   * Indicates if the theme is active in the file that owns this catalog.
+   * Only themes from `penpot.library.local.tokens` can be changed.
    */
   active: boolean;
 
   /**
    * Toggles the active status of this theme.
+   * Only themes from `penpot.library.local.tokens` can be changed.
    */
   toggleActive(): void;
 
@@ -6039,7 +6171,10 @@ export interface Variants {
   currentValues(property: string): string[];
 
   /**
-   * Remove a property of the Variant
+   * Remove a property of the Variant. If several variants end up with the
+   * same values, the top one in the layers panel keeps them and each lower
+   * one gets a numbered value: a " (n)" suffix, or "(n)" when all its
+   * remaining values are empty.
    * @param pos The position of the property to remove
    */
   removeProperty(pos: number): void;

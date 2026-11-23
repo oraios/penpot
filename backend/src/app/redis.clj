@@ -71,6 +71,7 @@
   "Public API of default redis connection"
   (-publish [_ topic message])
   (-rpush [_ key payload])
+  (-llen [_ key])
   (-blpop [_ timeout keys])
   (-eval [_ script])
   (-get [_ key])
@@ -194,6 +195,9 @@
 
       (catch RedisCommandInterruptedException cause
         (throw (InterruptedException. (ex-message cause))))))
+
+  (-llen [_ key]
+    (.llen cmd ^String key))
 
   (-blpop [_ keys timeout]
     (try
@@ -419,7 +423,7 @@
     (try
       (-del conn keys)
       (catch RedisCommandTimeoutException cause
-        (l/err :hint "timeout on del redis key" :key key :cause cause)
+        (l/err :hint "timeout on del redis key" :keys keys :cause cause)
         nil))))
 
 (defn ping
@@ -444,6 +448,11 @@
 
     (assert (every? string? keys) "only string keys allowed")
     (-blpop conn keys timeout)))
+
+(defn llen
+  [conn key]
+  (assert (string? key) "key must be string instance")
+  (-llen conn key))
 
 (defn rpush
   [conn key elements]

@@ -75,14 +75,17 @@ export class DashboardPage extends BaseWebSocketPage {
       .getByTestId("dashboard-header")
       .getByRole("heading", { level: 1 });
 
-    this.addProjectButton = page.getByRole("button", { name: "+ NEW PROJECT" });
+    this.addProjectButton = page.getByTestId("new-project-button");
     this.projectName = page.getByText("Project 1");
 
     this.draftsLink = this.sidebar.getByText("Drafts");
     this.fontsLink = this.sidebar.getByText("Fonts");
     this.librariesLink = this.sidebar.getByText("Libraries");
 
-    this.searchButton = page.getByRole("button", { name: "dashboard-search" });
+    this.searchButton = page.getByRole("button", {
+      name: "Search",
+      exact: true,
+    });
     this.searchInput = page.getByPlaceholder("Search…");
 
     this.teamDropdown = this.sidebar.getByRole("button", {
@@ -231,6 +234,12 @@ export class DashboardPage extends BaseWebSocketPage {
       "get-team-stats?team-id=*",
       "dashboard/get-team-stats.json",
     );
+  }
+
+  // The clipboard text parsed as a URL, as left by a "Copy link" action.
+  async copiedLink() {
+    const text = await this.page.evaluate(() => navigator.clipboard.readText());
+    return new URL(text);
   }
 
   async goToDashboard() {

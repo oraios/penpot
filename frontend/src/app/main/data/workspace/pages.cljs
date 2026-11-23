@@ -147,7 +147,12 @@
                               :workspace-focus-selected))]
 
         (cond-> state
-          exit? (dissoc :workspace-drawing))))))
+          exit? (dissoc :workspace-drawing))))
+
+    ptk/EffectEvent
+    (effect [_ _ _]
+      ;; Free the worker's copy of the page and its indexes
+      (mw/emit! {:cmd :index/finalize :page-id page-id}))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Workspace Page CRUD
@@ -313,7 +318,7 @@
                                objects))
 
             changes (-> (pcb/empty-changes it)
-                        (pcb/add-page new-page-id page)
+                        (pcb/add-page page)
                         (pcb/with-page page)
                         (pcb/with-objects objects)
                         ;; Create new components for each duplicated variant main

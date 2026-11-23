@@ -144,16 +144,15 @@
 
 
 (defn- resolve-value-tokenscript
-  [tokens prev-token value]
-  (let [result (ts/update-token tokens (assoc prev-token :value value))
-        token-result (.-resolved result)]
+  "Resolves the draft against `token-sets`, the library's sets without
+  the token being edited (see `csu/use-edit-token-sets`)."
+  [token-sets prev-token token-name value]
+  (let [draft (csu/draft-token prev-token token-name value)
+        {:keys [errors resolved-value]} (ts/resolve-draft token-sets draft)]
     (rx/of
-     (cond
-       (ts/processor-error? token-result) {:error (wte/error-with-value :error.style-dictionary/missing-reference (some->> (.-dependencyChain token-result)
-                                                                                                                           (seq)
-                                                                                                                           (rest)))}
-       (instance? js/Error token-result) {:error (wte/error-with-value :error.style-dictionary/invalid-token-value value)}
-       :else {:value token-result}))))
+     (if (seq errors)
+       {:error (first errors)}
+       {:value resolved-value}))))
 
 (defn- resolve-value
   [tokens prev-token token-name value]
@@ -178,10 +177,7 @@
            (sd/resolve-tokens-interactive)
            (rx/mapcat
             (fn [resolved-tokens]
-              (let [{:keys [errors resolved-value] :as resolved-token} (get resolved-tokens (:name token))
-                    resolved-value (if (contains? cf/flags :tokenscript)
-                                     (ts/tokenscript-symbols->penpot-unit resolved-value)
-                                     resolved-value)]
+              (let [{:keys [errors resolved-value]} (get resolved-tokens (:name token))]
                 (if resolved-value
                   (rx/of {:value resolved-value})
                   (rx/of {:error (if errors
@@ -211,6 +207,9 @@
             (rx/behavior-subject (:value token))
             (rx/subject)))
 
+        token-sets
+        (csu/use-edit-token-sets (:name token))
+
         hint*
         (mf/use-state {})
 
@@ -237,28 +236,37 @@
                                   :hint-message (:message error)})
           props)]
 
-    (mf/with-effect [resolve-stream tokens token input-name token-name]
+    (mf/with-effect [resolve-stream tokens token-sets token input-name token-name]
 
       (let [resolve-value (if (contains? cf/flags :tokenscript)
-                            resolve-value-tokenscript
-                            resolve-value)
+                            (partial resolve-value-tokenscript token-sets token token-name)
+                            (partial resolve-value tokens token token-name))
             subs (->> resolve-stream
                       (rx/debounce 300)
-                      (rx/mapcat (partial resolve-value tokens token token-name))
+                      (rx/mapcat resolve-value)
                       (rx/map (fn [result]
                                 (d/update-when result :error wte/resolve-error-message)))
                       (rx/subs! (fn [{:keys [error value]}]
                                   (let [touched? (get-in @form [:touched input-name])]
-                                    (when touched?
-                                      (if error
-                                        (if (csu/group-name-conflict-error? error token-name)
-                                          (swap! form assoc-in [:extra-errors ""] {:message error})
-                                          (do
-                                            (swap! form assoc-in [:extra-errors input-name] {:message error})
-                                            (reset! hint* {:message error :type "error"})))
-                                        (let [message (tr "workspace.tokens.resolved-value" value)]
-                                          (swap! form update :extra-errors dissoc input-name)
-                                          (reset! hint* {:message message :type "hint"}))))))))]
+                                    (cond
+                                      ;; Untouched field (form just opened)
+                                      (not touched?)
+                                      (when (and (not error)
+                                                 (csu/show-hint-on-open? (get-in @form [:data input-name]) value))
+                                        (reset! hint* {:message (tr "workspace.tokens.resolved-value" value)
+                                                       :type "hint"}))
+
+                                      error
+                                      (if (csu/group-name-conflict-error? error token-name)
+                                        (swap! form assoc-in [:extra-errors ""] {:message error})
+                                        (do
+                                          (swap! form assoc-in [:extra-errors input-name] {:message error})
+                                          (reset! hint* {:message error :type "error"})))
+
+                                      :else
+                                      (let [message (tr "workspace.tokens.resolved-value" value)]
+                                        (swap! form update :extra-errors dissoc input-name)
+                                        (reset! hint* {:message message :type "hint"})))))))]
 
         (fn []
           (rx/dispose! subs))))
@@ -303,7 +311,11 @@
 
         resolve-stream
         (mf/with-memo [token]
-          (if-let [value (get-in token [:value input-name])]
+          ;; An alias token keeps its reference as a plain string value
+          (if-let [value (if (= input-name :reference)
+                           (let [value (:value token)]
+                             (when (string? value) value))
+                           (get-in token [:value input-name]))]
             (rx/behavior-subject value)
             (rx/subject)))
 

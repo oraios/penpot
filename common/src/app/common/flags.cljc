@@ -59,7 +59,9 @@
 
 (def varia
   "Rest of the flags"
-  #{:audit-log
+  #{;; Runs the audit-log buffer GC by default. Disable it explicitly while
+    ;; the old and new versions coexist.
+    :audit-log-gc
     ;; Enables shipping audit_log chunks to Nexus.
     :nexus
     :audit-log-logger
@@ -88,6 +90,11 @@
     ;; on the database (server-error-report) and notified to mattermost
     ;; (only when the webhook url is also configured).
     :error-reporting
+    ;; Disabled by default. When enabled, file-gc skips its media clean-up,
+    ;; which does not read revision rows, and the revision writer keeps
+    ;; revision rows with no expiry (penpot#13187). Enable it only where
+    ;; both are deployed.
+    :file-change-retention
     ;; Activates the schema validation during update file.
     :file-schema-validation
     ;; Reports the schema validation errors internally.
@@ -96,6 +103,10 @@
     :file-validation
     ;; Reports the referential integrity validation errors internally.
     :soft-file-validation
+    ;; Disabled by default; never enable it in production. Lets a save
+    ;; carry a marker that makes the backend fail it with a chosen error
+    ;; (frontend `debug.failNextSave`).
+    :debug-save-faults
     ;; TODO: deprecate this flag and consolidate the code
     :frontend-svgo
     ;; TODO: deprecate this flag and consolidate the code
@@ -174,7 +185,7 @@
     ;; redis for caching data
     :redis-cache
 
-    ;; Activates the admin-console module
+    ;; enabled by default. Activates the admin-console module
     :admin-console
 
     ;; disabled by default. When enabled, allows the admin-console
@@ -187,6 +198,8 @@
     :available-viewer-wasm
     :stroke-path
     :stroke-per-side
+    ;; Enables bullet lists in the v3 (WASM) text editor.
+    :text-editor-wasm-v1-lists
 
     :custom-shortcuts
     :remote-media-processing
@@ -213,6 +226,7 @@
    :enable-backend-api-doc
    :enable-backend-openapi-doc
    :enable-backend-worker
+   :enable-audit-log-gc
    :enable-secure-session-cookies
    :enable-email-verification
    :enable-onboarding
@@ -226,6 +240,7 @@
    :enable-inspect-styles
    :enable-feature-fdata-objects-map
    :enable-feature-render-wasm
+   :enable-feature-text-editor-wasm-html-paste
    :enable-token-import-from-library
    :enable-render-switch
    :enable-render-wasm-info
@@ -236,7 +251,7 @@
    :enable-token-combobox
    :enable-custom-shortcuts
    :enable-token-lib-sync
-   :enable-link-unfurl])
+   :enable-admin-console])
 
 (defn parse
   [& flags]

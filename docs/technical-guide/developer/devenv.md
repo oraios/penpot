@@ -12,7 +12,7 @@ in order to correctly set up the development environment.
 
 You can [look here][1] for complete instructions.
 
-[1]: /technical-guide/getting-started/#install-with-docker
+[1]: /technical-guide/getting-started/docker
 
 
 Optionally, to improve performance, you can also increase the maximum number of
@@ -66,8 +66,9 @@ The devenv runs as separate compose projects:
   * `penpotdev-wsN` project per runtime instance.
      - `ws0` (a.k.a. `main`) is the current state of your repo;
      - `ws1` and up are clones that you maintain explicitly under `${PENPOT_WORKSPACES_DIR}/wsN/`
-       (default `~/.penpot/penpot_workspaces/`). You can explicitly sync them
-       with the `--sync` flag (automatic on first start).
+       (default `${XDG_DATA_HOME:-~/.local/share}/penpot-devenv/workspaces/`, or
+       `~/.penpot/penpot_workspaces/` when that directory already exists). You
+       can explicitly sync them with the `--sync` flag (automatic on first start).
 
 Each call to `run-devenv` brings up one instance. Workspaces are independent
 and can be started and stopped in any order:
@@ -119,8 +120,9 @@ Container-internal ports stay fixed. Target a specific instance with
 accepts a **non-negative integer only** — `--ws main` or `--ws ws1` is
 rejected, keeping the flag shape uniform across commands. `run-devenv` is
 ws0-only and takes no workspace flag. `run-devenv` also accepts
-`--serena-context CTX` (used together with `--agentic`) and `--git-user-name NAME` / `--git-user-email
-EMAIL` (see below).
+`--serena-context CTX` (used together with `--agentic`), `--gpu` to enable
+hardware rendering in Chromium (e.g. for benchmarks), and `--git-user-name NAME` 
+/ `--git-user-email EMAIL` (see below).
 
 Configuration lives in one tracked file, `docker/devenv/defaults.env` (the
 ws0 baseline); `ws1+` values (offset ports, `wsN` container/volume names) are
@@ -166,6 +168,49 @@ container (same UID mapping as the source tree). Opencode's own state
 (sessions, `auth.json`) lives in `~/.local/share/opencode`, which stays in
 the container's data volume regardless of this flag.
 
+### NVIDIA GPU access
+
+On Linux, `run-devenv --gpu` grants the selected container access to NVIDIA
+GPUs. The host needs an NVIDIA driver, NVIDIA Container Toolkit configured
+with a Docker runtime named `nvidia`, and a readable Vulkan driver manifest
+at `/usr/share/vulkan/icd.d/nvidia_icd.json`. The option checks the runtime
+and manifest before provisioning.
+
+Build an image from this checkout to include `xauth` and the Vulkan loader
+(`libvulkan1`), then use the same tag when starting the container:
+
+```bash
+./manage.sh build-devenv --tag gpu-local
+DEVENV_TAG=gpu-local ./manage.sh run-devenv --gpu
+```
+
+`--gpu` works with `--ws N`, `--agentic`, `--attach`, and
+`--opencode-config-dir DIR`. For example:
+
+```bash
+DEVENV_TAG=gpu-local ./manage.sh run-devenv --gpu --ws 1 --agentic
+```
+
+The GPU overlay requests all NVIDIA devices and driver capabilities and
+mounts the host Vulkan manifest directory read-only. Processes inside the
+container inherit `PENPOT_GPU=1` and `NVIDIA_DRIVER_CAPABILITIES=all`.
+`PENPOT_GPU` signals GPU access to applications. The explicit `--gpu` flag
+selects the overlay.
+
+GPU mode applies at container creation and lasts for that container's
+lifetime. To change it, stop the selected instance and run it again with
+or without `--gpu`:
+
+```bash
+./manage.sh stop-devenv --ws 1
+DEVENV_TAG=gpu-local ./manage.sh run-devenv --ws 1
+```
+
+Run browser commands inside devenv. The Chromium ANGLE Vulkan backend
+needs an X display in this setup, so run those commands under
+`xvfb-run -a`. Each caller starts its own Xvfb display. Applications choose
+their rendering backend.
+
 ### Shared state and workers
 
 All instances share one Penpot database and one RustFS bucket; users, teams,
@@ -174,13 +219,14 @@ keeps msgbus Pub/Sub channels (collab broadcasts, team-org notifications,
 file-summary cache, rate-limit counters) isolated.
 
 Background workers (`enable-backend-worker`) run only on ws0 — ws1+ overlays
-disable it. ws1+ RPC handlers still enqueue tasks into the shared Postgres
-`task` table; ws0's dispatcher claims them via `FOR UPDATE SKIP LOCKED` and
+disable it. ws1+ RPC handlers still enqueue jobs into the shared Postgres
+`job` table; ws0's dispatcher claims them via `FOR UPDATE SKIP LOCKED` and
 runs them against the shared DB and RustFS. Workers are fire-and-forget:
-`wrk/submit!` inserts a row and returns; RPC handlers never wait on
+`jobs/submit` inserts a row and returns; RPC handlers never wait on
 completion. The "ws0 only" policy avoids multi-instance worker races (cron
-dedup is best-effort across instances, `wrk/submit!` `dedupe` is racy across
-submitters).
+dedup is best-effort across instances; the dedupe and exclusivity of
+`jobs/submit` are resolved by unique indexes, so the submits themselves do
+not race).
 
 Each workspace is independent and can be started and stopped in any order.
 Shared infrastructure shuts down only when no instances remain running.
@@ -385,7 +431,7 @@ Warning: by default Cursor won't support HTTPS with a self-signed certificate. I
 
 An example of your cursor configuration can be:
 
-```javascript
+```json
 {
     "mcpServers": {
         "penpot-devenv": {
@@ -462,6 +508,14 @@ Some examples of commonly used flags:
 - `enable-login-with-ldap` — enables LDAP login.
 
 The full list of available flags can be found in `common/src/app/common/flags.cljc`.
+
+One flag is off by default in the devenv: the frontend compiles with
+`PENPOT_DEVENV=true` in the development containers, which hides all
+admin-console UI (links, routes, team menu entries) whether or not you created
+a `config.js`. To test the admin-console against a local Nitrate instance,
+reactivate it from your `config.js`: `var penpotFlags = "enable-admin-console";`.
+Your flags are parsed after the injected default, so your entry wins. Production
+builds are unaffected: `PENPOT_DEVENV` only exists in the devenv containers.
 
 After creating or modifying this file, **reload the browser** (no need to restart anything).
 

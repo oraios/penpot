@@ -8,7 +8,7 @@
   (:require
    ["@penpot/ua-parser" :as ua]
    [app.common.data :as d]
-   [app.common.data.macros :as dm]
+   [app.common.exceptions :as ex]
    [app.common.json :as json]
    [app.common.logging :as l]
    [app.common.math :as math]
@@ -316,14 +316,14 @@
                   0)))
 
           (add-libraries-counters [state files]
-            (reduce (fn [state library-id]
-                      (let [data (dm/get-in files [library-id :data])]
-                        (-> state
-                            (update :total-components + (count (:components data)))
-                            (update :total-colors + (count (:colors data)))
-                            (update :total-typographies + (count (:typographies data))))))
-                    state
-                    (refs/select-libraries files file-id)))]
+            (reduce-kv (fn [state _ library]
+                         (let [data (:data library)]
+                           (-> state
+                               (update :total-components + (count (:components data)))
+                               (update :total-colors + (count (:colors data)))
+                               (update :total-typographies + (count (:typographies data))))))
+                       state
+                       (refs/select-libraries files file-id)))]
 
     (ptk/reify ::snapshot-performance-info
       ptk/UpdateEvent
@@ -375,6 +375,18 @@
   [flags]
   (or (contains? flags :audit-log)
       (contains? flags :telemetry)))
+
+(defn- run-event-callbacks
+  "Invoke host callbacks registered for this prepared audit event's
+  `:name`. Errors in a callback are swallowed so the audit pipeline
+  keeps running."
+  [event]
+  (let [name     (:name event)
+        cbs      (some-> name cf/get-event-callbacks)
+        js-event (when (seq cbs) (json/->js event))]
+    (when js-event
+      (doseq [f cbs]
+        (ex/ignoring (f js-event))))))
 
 (defn initialize
   []
@@ -478,6 +490,8 @@
                                  (-> event
                                      (assoc :timestamp (ct/now))
                                      (assoc :context context)))))
+
+                     (rx/tap run-event-callbacks)
 
                      (rx/tap (fn [event]
                                (l/debug :hint "event enqueued")

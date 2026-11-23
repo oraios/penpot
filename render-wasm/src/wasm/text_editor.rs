@@ -3,6 +3,7 @@ use macros::{wasm_error, ToJs};
 use crate::globals::{get_render_state, get_text_editor_state};
 use crate::math::{Matrix, Point};
 use crate::mem;
+use crate::render::text_editor::range_origin;
 use crate::shapes::{TextAlign, TextContent, TextPositionWithAffinity, Type, VerticalAlign};
 use crate::state::{State, TextEditorEvent, TextEditorState};
 use crate::utils::uuid_from_u32_quartet;
@@ -10,7 +11,8 @@ use crate::utils::uuid_to_u32_quartet;
 use crate::uuid::Uuid;
 use crate::wasm::fills::RawFillData;
 use crate::wasm::text::{
-    helpers as text_helpers, RawTextAlign, RawTextDecoration, RawTextDirection, RawTextTransform,
+    helpers as text_helpers, RawListStyleType, RawTextAlign, RawTextDecoration, RawTextDirection,
+    RawTextTransform,
 };
 use crate::with_state;
 use skia_safe::Color;
@@ -740,6 +742,13 @@ pub extern "C" fn text_editor_get_current_styles() -> *mut u8 {
             })
             .unwrap_or(RawTextTransform::None as u32);
 
+        let list_style_type = styles
+            .list_style_type
+            .value()
+            .as_ref()
+            .map(|value| RawListStyleType::from(*value) as u32)
+            .unwrap_or(RawListStyleType::None as u32);
+
         let font_family_id = styles
             .font_family_id
             .value()
@@ -816,7 +825,9 @@ pub extern "C" fn text_editor_get_current_styles() -> *mut u8 {
         bytes.extend_from_slice(&font_variant_id[3].to_le_bytes()); // 112    // 28
         bytes.extend_from_slice(&line_height.to_le_bytes()); // 116    // 29
         bytes.extend_from_slice(&letter_spacing.to_le_bytes()); // 120    // 30
-        bytes.extend_from_slice(&fill_bytes); // 124
+        bytes.extend_from_slice(&(*styles.list_style_type.state() as u32).to_le_bytes()); // 124    // 31
+        bytes.extend_from_slice(&list_style_type.to_le_bytes()); // 128    // 32
+        bytes.extend_from_slice(&fill_bytes); // 132
 
         mem::write_bytes(bytes)
     })
@@ -1030,5 +1041,58 @@ pub extern "C" fn text_editor_get_selection(buffer_ptr: *mut u32) -> bool {
             *buffer_ptr.add(3) = focus_offset as u32;
         }
         true
+    })
+}
+
+/// Writes where the text between the UTF-16 offsets starts in the text shape
+/// (x, y, shape-local) and its box size (width, height); false when no text.
+#[no_mangle]
+#[wasm_error]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn text_get_range_origin(
+    a: u32,
+    b: u32,
+    c: u32,
+    d: u32,
+    start_paragraph: u32,
+    start_offset: u32,
+    end_paragraph: u32,
+    end_offset: u32,
+    buffer_ptr: *mut f32,
+) -> Result<bool> {
+    with_state!(state, {
+        let Some(shape) = state.shapes.get(&uuid_from_u32_quartet(a, b, c, d)) else {
+            return Ok(false);
+        };
+        let Type::Text(text_content) = &shape.shape_type else {
+            return Ok(false);
+        };
+
+        let paragraphs = text_content.paragraphs();
+        let to_char = |paragraph: u32, offset: u32| {
+            let paragraph = paragraph as usize;
+            let offset = paragraphs
+                .get(paragraph)
+                .map(|para| para.utf16_offset_to_char(offset as usize))
+                .unwrap_or(offset as usize);
+            (paragraph, offset)
+        };
+        let Some(origin) = range_origin(
+            to_char(start_paragraph, start_offset),
+            to_char(end_paragraph, end_offset),
+            text_content,
+            shape,
+        ) else {
+            return Ok(false);
+        };
+        let selrect = shape.selrect();
+
+        unsafe {
+            *buffer_ptr = origin.x;
+            *buffer_ptr.add(1) = origin.y;
+            *buffer_ptr.add(2) = selrect.width();
+            *buffer_ptr.add(3) = selrect.height();
+        }
+        Ok(true)
     })
 }

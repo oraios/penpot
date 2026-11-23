@@ -523,7 +523,9 @@
        (effective-tokens-source? file-data (:id file-data))))
 
 (defn editable-tokens?
-  "Returns true if the file-data is its own tokens source."
+  "Returns true if the file-data is its own tokens source.
+   Call only with the current local file's data. This predicate does not check
+   which file is open; callers must reject connected libraries first."
   [file-data]
   (effective-tokens-source? file-data (:id file-data)))
 
@@ -546,6 +548,70 @@
    The function will receive the tokens status and the rest of args."
   [file-data f & args]
   (d/update-when file-data :tokens-status #(apply f % args)))
+
+(defn get-own-tokens-status
+  "The tokens status of the file's own tokens-lib, kept aside while the
+   tokens source is an external library."
+  [file-data]
+  (:own-tokens-status file-data))
+
+(defn set-own-tokens-status
+  "Keep aside the tokens status of the file's own tokens-lib. Setting it to
+   nil removes the attribute."
+  [file-data tokens-status]
+  (assert (or (nil? tokens-status) (ctos/tokens-status? tokens-status))
+          "expected nil or valid tokens-status")
+  (if (nil? tokens-status)
+    (dissoc file-data :own-tokens-status)
+    (assoc file-data :own-tokens-status tokens-status)))
+
+(defn detach-tokens-source
+  "Make the file its own tokens source again, restoring the tokens status
+   kept aside for its own tokens-lib. If none was kept, the tokens status
+   is removed."
+  [file-data]
+  (let [own-tokens-status (get-own-tokens-status file-data)]
+    (if (some? own-tokens-status)
+      (-> file-data
+          (set-tokens-source nil)
+          (set-own-tokens-status nil)
+          (assoc :tokens-status own-tokens-status))
+      (-> file-data
+          (set-tokens-source nil)
+          (dissoc :tokens-status)))))
+
+(defn absorb-tokens-lib
+  "Copy the tokens-lib of the library into the file, replacing the
+   previous one if any, and unset the tokens-source, so the file becomes
+   its own tokens source.
+
+   The tokens-status of the file is preserved. If the file has none, the
+   one of the library is copied along with the tokens-lib.
+
+   If the library has no tokens-lib, only the tokens-source is unset, and
+   the file keeps its own tokens-lib, with the tokens status kept aside for
+   it if any. If there is no library-data, there is nothing to absorb and
+   the file is returned unchanged."
+  [file-data library-data]
+  (if (nil? library-data)
+    file-data
+    (let [tokens-lib (get-tokens-lib library-data)]
+      (if (nil? tokens-lib)
+        (let [own-tokens-status (get-own-tokens-status file-data)]
+          (cond-> (-> file-data
+                      (set-tokens-source nil)
+                      (set-own-tokens-status nil))
+            (some? own-tokens-status)
+            (assoc :tokens-status own-tokens-status)))
+        (let [tokens-status (or (get-tokens-status file-data)
+                                (get-tokens-status library-data))]
+          (cond-> (-> file-data
+                      (set-tokens-source nil)
+                      ;; The kept status refers to the replaced tokens-lib
+                      (set-own-tokens-status nil)
+                      (assoc :tokens-lib tokens-lib))
+            (some? tokens-status)
+            (assoc :tokens-status tokens-status)))))))
 
 ;; Tokens status with tokens lib
 
@@ -718,6 +784,57 @@
                   tokens)))
             (d/ordered-map)
             ordered-active)))
+
+(defn- token-set-entries
+  "The tokens of `sets` as tokenscript takes them: `[[set-id tokens] ..]`
+  in the given order, later sets taking precedence."
+  [sets]
+  (mapv (fn [set] [(ctob/get-id set) (ctob/get-tokens- set)]) sets))
+
+(defn get-active-token-sets
+  "The active sets unmerged (see `token-set-entries`), the sets
+  `get-tokens-in-active-sets` merges."
+  [tokens-status tokens-lib]
+  (assert (ctos/tokens-status? tokens-status) "expected valid tokens-status")
+  (assert (ctob/tokens-lib? tokens-lib) "expected valid tokens-lib")
+  (let [active-set-ids (ctos/get-active-set-ids tokens-status)]
+    (-> (filter #(contains? active-set-ids (ctob/get-id %)) (ctob/get-sets tokens-lib))
+        (token-set-entries))))
+
+(defn get-active-token-sets-force
+  "Same as `get-active-token-sets` but force-including a set by id. A set
+  that is not active comes first, with the lowest precedence, as in
+  `get-tokens-in-active-sets-force`."
+  [tokens-status tokens-lib force-set-id]
+  (assert (uuid? force-set-id) "expected valid set id")
+  (let [forced (when-not (contains? (ctos/get-active-set-ids tokens-status) force-set-id)
+                 (ctob/get-set tokens-lib force-set-id))]
+    (cond->> (get-active-token-sets tokens-status tokens-lib)
+      forced (into (token-set-entries [forced])))))
+
+(defn get-token-sets-for-edit
+  "Every set of the library unmerged (see `token-set-entries`), with
+  `set-id` moved last so its tokens take precedence: the sets
+  `get-all-tokens-map` merges with the set of a token being edited on
+  top."
+  [tokens-lib set-id]
+  (assert (ctob/tokens-lib? tokens-lib) "expected valid tokens-lib")
+  (let [sets   (ctob/get-sets tokens-lib)
+        target (when set-id (d/seek #(= set-id (ctob/get-id %)) sets))]
+    (-> (cond-> (into [] (remove #(identical? % target)) sets)
+          target (conj target))
+        (token-set-entries))))
+
+(defn without-token
+  "`sets` (see `token-set-entries`) with the token `token-name` left out of
+  every set. A set without it stays the same object, so tokenscript skips
+  it as unchanged."
+  [sets token-name]
+  (mapv (fn [[set-id tokens :as entry]]
+          (if (contains? tokens token-name)
+            [set-id (dissoc tokens token-name)]
+            entry))
+        sets))
 
 (defn sync-tokens-status-with-lib
   "Synchronizes tokens status with the current tokens lib:

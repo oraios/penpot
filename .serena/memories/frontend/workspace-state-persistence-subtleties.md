@@ -1,37 +1,24 @@
-# Frontend Workspace State and Persistence Subtleties
+# Workspace persistence
 
-## Store and interaction streams
+- Start at `app.main.data.persistence`, its `commits` and `lock` namespaces, and the `bundle-fetched` flow in `app.main.data.workspace`. For ordinary state and refs see `mem:frontend/workspace-store`; for creating, replaying and undoing edits see `mem:frontend/workspace-commits`.
 
-- `app.main.store/state` is the Potok store; `emit!` always returns nil. Store errors flow through the mutable `on-error` atom.
-- `last-events` keeps a filtered rolling buffer of about 50 event type strings and commit hint origins. It intentionally omits noisy websocket/persistence/pointer events.
-- `ongoing-tasks` controls `window.onbeforeunload`: any non-empty set blocks tab unload.
-- `app.main.streams/wasm-modifiers` and `workspace-selrect` are behavior subjects used for high-frequency interactive preview state that bypasses normal store updates and lenses.
-- Keyboard modifier streams merge a window blur signal so stuck modifier-key state is cleared after focus loss.
+## Ordering and partial saves
 
-## Repo calls
+- A flush moves only its own commits out of the buffer; edits arriving mid-flush remain. Batch by file and version and keep per-commit metadata through `update-file`; flattening the changes would remove the server's partial-rejection boundary. See `mem:backend/subtleties` for the server contract.
+- A `:rejected` response can already have saved part of the batch. Roll back rejected groups before acknowledging the saved entry. Within each affected file revert from the first rejected or grouped commit onward, following any newly affected groups across files; unrelated groups in other files stay. If a reverted group was already partly saved, enqueue compensation, including for unloaded files. Undo pending edits before re-applying intervening peer changes and keeping valid local redo; absolute undo values applied in isolation can overwrite later peer edits.
+- Rebase is not a normal commit, so dependent consumers cannot rely on commit watchers. Notify rollback only once the rebased or reloaded data is in state; comments persist through their own RPC, library sync needs a landed save before marking success, and thumbnails must not upload stale pre-rollback output. Invalidate stale path or text editor drafts before they can commit again on exit. Follow `apply-rollback-plan` and `notify-rolled-back` for these entry points.
+- A save whose reply mentions an unseen peer or repair revision waits for its WebSocket change before settlement; do not apply repair changes from the HTTP reply or resend a waiting head. If the wait expires, settle and reload. Preserve the server order so the peer change sits below the rebased local edits.
+- A file restore changes `vern`: do not replay queued, buffered or saved edits from another version. A stale send or late failure must not halt the new version. Pending replay on reopening goes queue then buffer; if replay throws, retain the queue and show loaded server data.
 
-- `app.main.repo/send!` uses GET only when the RPC name starts with `get-`, when all params are query params, or for configured special cases. Only GET requests are retried.
-- GET retry is limited to transient `:network`, `:bad-gateway`, `:service-unavailable`, and `:offline` errors with exponential backoff. Mutations are not retried.
-- A server SSE response is only accepted when the command is configured `:stream?`; otherwise it raises an unexpected-response assertion.
+## Failures and recovery
 
-## Commits, undo, persistence
+- `app.main.repo/retryable-types` is shared with error reporting and persistence. Repo retries only GETs; saves own their retry budget, including save-only server-busy cases. Keep the stalled-save report deadline shorter than the request timeout. A slowly failing request may still be applying server-side, so cap repeated slow attempts separately from fast network failures.
+- A live retry episode owns the runner and its budget. New edits queue behind it; they do not start another runner. Timer and online resumption apply only to the live episode; leaving the workspace suspends retries and reopening can restore them. A retry reuses its `:commit-id`, but never sends a second request while the first remains in flight. Stub timers for tests rather than rebinding across `await`.
+- Keep permanent failures halted and their edits queued so `wait-persisted-or-error` keeps rejecting; snapshot creation must not treat an unsaved edit as saved. Initialization does not lift a halt. Reopening or changing roles invokes recovery: retry a transport failure still covered by the slow cycle; otherwise release the failed file before other files can drain. A role change that leaves a viewer does not release permission-denied edits. On release while the file is still open, also revert affected edits on canvas.
+- Only users who can edit get the save-failure lock. Cancel gestures before interrupting, so stale previews do not commit; restore the prior read-only choice without overwriting the separate WebGL context-loss state. The Inspect tab's read-only state is not itself the save lock. See `mem:frontend/error-reporting` for how failures are reported.
 
-- `commit-changes` refuses to create commits unless `:permissions :can-edit` is true. It captures file revn/vern, selected-before, features, tags, undo group, and translation flag into a `::commit` event.
-- Applying a remote commit first rolls back pending local commits, applies the remote changes, then replays pending local redo changes. Index updates are emitted for undo, remote redo, and replayed redo paths.
-- Local commits are independently consumed by undo, persistence, WASM model updates, thumbnail/library watchers, and text position-data recalculation.
-- Persistence buffers local commits: status becomes pending after about 200ms, commits are flushed after about 3s or `::force-persist`, and buffered commits are merged per file before `:update-file`.
-- Persistence sends revn as the max of the commit revn and locally tracked latest revn; remote commits update that revn tracker.
-- Persistence is skipped in version preview/read-only mode or without edit permission.
-- Save failures split transient vs terminal (`transient-error?`: the repo retryable types `:network`/`:offline`/`:bad-gateway`/`:service-unavailable` plus `:invalid-save-response`; everything else is terminal). Terminal keeps the `:error` halt + `flash-persistence` path; transient enters a `:retrying` episode: the head commit stays queued and resends with backoff 2s/8s/20s (3 retries, then today's terminal path). Resends rotate the `::request-id` stamp only when the old request left `active-requests`, carry the same `:commit-id`, and never double-send while one request is in flight (`:in-flight` stays silent). Retry timers carry the episode token; a superseded token stays silent. Status stays `:retrying` through re-entries (`next-status` refuses `:pending`/`:saving` from it); waiters (`wait-persisted-or-error`) wait through it and reject only on `:error`.
-- One reconnect notice per episode: sticky toast tagged `:persistence-reconnecting` (single-toast store, re-show replaces), hidden by tag on drain (`:saved`) and on terminal failure; recovery is silent. Header indicator has a `:retrying` state (`workspace.header.retrying`).
-- Resume triggers: backoff timer and the browser `online` event (guarded by `exists? js/window`; re-enters the runner only for a live `:retrying` episode). New local edits during `:retrying` only join the queue: the episode keeps its `:run-id`, so `append-commit` does not re-enter, and the live runner (still waiting on the head's `commit-persisted`) sends them after the head. Re-entering on edits would bypass the backoff and spend an attempt per batched commit.
-- Tests instant-trigger retries by stubbing `rx/timer` (recording delays to assert the schedule); dynamic bindings do not survive `await` continuations, so no dynamic var for delays.
-- Undo transactions can stay open only temporarily; timed-out pending transactions are force-committed after about 20s. Undo entries are capped at 50.
-- Undo/redo are ignored while a normal editor/drawing interaction is active, except grid-layout edition handles undo through this path.
-- After local commits and when render-wasm is active, text shapes get derived `:position-data` recomputed in a separate commit tagged `#{:position-data}`; that tag is excluded from the position-data watcher to avoid loops.
+## Leaving and exporting
 
-## Refs
-
-- `refs/libraries` is explicitly deprecated for performance; prefer derefing `refs/files` and memoizing `select-libraries` in components.
-- `refs/workspace-page-objects` uses `identical?` equality, so preserving object map identity matters for avoiding derived-ref churn.
-- Selected-shapes refs use a small `{objects selected}` wrapper with custom equality before running `process-selected`; avoid bypassing that pattern in hot UI paths.
+- Queued **or** buffered edits hold the unload guard and prevent a successful save wait from settling. The `:saved` status alone does not prove the buffer is empty. Flush on visibility-hidden or blur; pagehide/beforeunload are too late for an async request. Mock leave signals before initializing persistence in tests.
+- Export, `.penpot` download and dashboard duplicate wait only for the requested files before starting. Timeout or a save error ends that wait, not the action. A local export can include unsaved edits; a server export or duplicate can miss them. The duplicate flow owns its one completion toast so a generic success notice cannot overwrite the warning.
+- Follow `persistence-failed` for `save-failed` audit: report when the user is notified, even if the presentation delegates to authentication handling. A pre-repair snapshot is discoverable in version history through the repair notice; keep that link useful when changing history presentation.

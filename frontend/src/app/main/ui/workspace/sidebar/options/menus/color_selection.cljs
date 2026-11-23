@@ -14,6 +14,7 @@
    [app.main.data.workspace.tokens.application :as dwta]
    [app.main.store :as st]
    [app.main.ui.components.title-bar :refer [title-bar*]]
+   [app.main.ui.ds.buttons.button :refer [button*]]
    [app.main.ui.workspace.sidebar.options.rows.color-row :refer [color-row*]]
    [app.util.i18n :as i18n :refer [tr]]
    [rumext.v2 :as mf]))
@@ -98,17 +99,25 @@
 (def xf:map-shape-id
   (map :shape-id))
 
-(defn- retrieve-color-operations
-  [groups old-color prev-colors]
-  (let [old-color               (-> old-color
-                                    (dissoc :name :path)
-                                    (d/without-nils))
-        prev-color              (d/seek (partial get groups) prev-colors)
-        color-operations-old    (get groups old-color)
-        color-operations-prev   (get groups prev-color)
-        color-operations        (or color-operations-prev color-operations-old)
-        old-color               (or prev-color old-color)]
-    [color-operations old-color]))
+(defn resolve-color-operations
+  "Resolves the operations of the shapes that a color change must update.
+
+  Direct edits (the color and opacity inputs) always target the exact color
+  shown in the edited row. The colorpicker can invoke `on-change` with a stale
+  color while the previous change is still propagating to every shape, so for
+  picker changes it falls back to the most recent color that is already present
+  on the selected shapes."
+  [groups old-color prev-colors from-picker?]
+  (let [old-color (-> old-color
+                      (dissoc :name :path)
+                      (d/without-nils))]
+    (if from-picker?
+      (let [prev-color            (d/seek (partial get groups) prev-colors)
+            color-operations-old  (get groups old-color)
+            color-operations-prev (get groups prev-color)
+            color-operations      (or color-operations-prev color-operations-old)]
+        [color-operations (or prev-color old-color)])
+      [(get groups old-color) old-color])))
 
 (mf/defc color-selection-menu*
   {::mf/wrap [#(mf/memo' % (mf/check-props ["shapes"]))]}
@@ -137,7 +146,6 @@
         expand-color       (mf/use-state false)
         expand-token-color (mf/use-state false)
 
-        ;;  TODO: Review if this is still necessary.
         prev-colors-ref  (mf/use-ref nil)
 
         ;; Always keep this ref pointing to the latest groups so that on-change
@@ -151,9 +159,12 @@
          (fn [old-color new-color from-picker?]
            (let [groups (mf/ref-val groups-ref)
                  prev-colors (mf/ref-val prev-colors-ref)
-                 [color-operations old-color] (retrieve-color-operations groups old-color prev-colors)]
+                 [color-operations old-color] (resolve-color-operations
+                                               groups old-color prev-colors from-picker?)]
 
-             ;;  TODO: Review if this is still necessary.
+             ;; The colorpicker can deliver changes faster than they propagate
+             ;; to every selected shape, so keep the applied colors to fall
+             ;; back to them on the next change.
              (when from-picker?
                (let [color (-> new-color
                                (dissoc :name :path)
@@ -162,6 +173,11 @@
                                   (conj prev-colors color))))
 
              (st/emit! (dwc/change-color-in-selected color-operations new-color (dissoc old-color :token-name :has-token-applied))))))
+
+        on-change-for-color
+        (fn [color]
+          (fn [new-color _index & [from-picker?]]
+            (on-change color new-color from-picker?)))
 
         on-open
         (mf/use-fn #(mf/set-ref-val! prev-colors-ref []))
@@ -181,19 +197,12 @@
         (mf/use-fn
          (mf/deps token-colors groups)
          (fn [token-name]
-           (let [prev-colors (mf/ref-val prev-colors-ref)
-                 token-color (some #(when (= (:token-name %) token-name) %) token-colors)
-
-                 [color-operations _] (retrieve-color-operations groups token-color prev-colors)]
+           (let [token-color     (some #(when (= (:token-name %) token-name) %) token-colors)
+                 color-operations (get groups token-color)]
              (doseq [op color-operations]
                (let [attr (if (= (:prop op) :stroke)
                             #{:stroke-color}
-                            #{:fill})
-                     color (-> token-color
-                               (dissoc :token-name :has-token-applied)
-                               (d/without-nils))]
-                 (mf/set-ref-val! prev-colors-ref
-                                  (conj prev-colors color))
+                            #{:fill})]
                  (st/emit! (dwta/unapply-token {:token-name token-name
                                                 :attributes attr
                                                 :shape-ids [(:shape-id op)]})))))))
@@ -216,7 +225,8 @@
                  color (-> new-color
                            (dissoc :name :path)
                            (d/without-nils))
-                 [color-operations _] (retrieve-color-operations groups old-color prev-colors)]
+                 [color-operations _] (resolve-color-operations
+                                       groups old-color prev-colors false)]
              (mf/set-ref-val! prev-colors-ref
                               (conj prev-colors color))
              (st/emit! (dwta/apply-token-on-color-selected color-operations token)))))]
@@ -241,14 +251,15 @@
                :index index
                :on-detach #(on-detach color %)
                :select-only select-only
-               :on-change #(on-change color %1  %2)
+               :on-change (on-change-for-color color)
                :on-token-change #(on-token-change %1 %2 color)
                :on-open on-open
                :origin :color-selection
                :on-close on-close}]))
          (when (and (false? @expand-lib-color) (< 3 (count library-colors)))
-           [:button  {:class (stl/css :more-colors-btn)
-                      :on-click #(reset! expand-lib-color true)}
+           [:> button* {:variant "secondary"
+                        :class (stl/css :more-colors-btn)
+                        :on-click #(reset! expand-lib-color true)}
             (tr "workspace.options.more-lib-colors")])]
 
         [:div {:class (stl/css :selected-color-group)}
@@ -258,15 +269,16 @@
              :color color
              :index index
              :select-only select-only
-             :on-change #(on-change color %1 %2)
+             :on-change (on-change-for-color color)
              :origin :color-selection
              :on-token-change #(on-token-change %1 %2 color)
              :on-open on-open
              :on-close on-close}])
 
          (when (and (false? @expand-color) (< 3 (count colors)))
-           [:button  {:class (stl/css :more-colors-btn)
-                      :on-click #(reset! expand-color true)}
+           [:> button* {:variant "secondary"
+                        :class (stl/css :more-colors-btn)
+                        :on-click #(reset! expand-color true)}
             (tr "workspace.options.more-colors")])]
 
         [:div {:class (stl/css :selected-color-group)}
@@ -278,7 +290,7 @@
                  :color color
                  :index index
                  :select-only select-only
-                 :on-change #(on-change token-color %1 %2)
+                 :on-change (on-change-for-color token-color)
                  :origin :color-selection
                  :applied-token (:token-name token-color)
                  :on-detach-token on-detach-token
@@ -288,6 +300,7 @@
 
          (when (and (false? @expand-token-color)
                     (< 3 (count token-colors)))
-           [:button {:class (stl/css :more-colors-btn)
-                     :on-click #(reset! expand-token-color true)}
+           [:> button* {:variant "secondary"
+                        :class (stl/css :more-colors-btn)
+                        :on-click #(reset! expand-token-color true)}
             (tr "workspace.options.more-token-colors")])]])]))
